@@ -27,6 +27,13 @@ type Task struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type TaskPage struct {
+	Items  []Task `json:"items"`
+	Total  int    `json:"total"`
+	Limit  int    `json:"limit"`
+	Offset int    `json:"offset"`
+}
+
 type diskState struct {
 	NextID int          `json:"next_id"`
 	Tasks  map[int]Task `json:"tasks"`
@@ -111,6 +118,30 @@ func (s *Store) list() []Task {
 	return out
 }
 
+func (s *Store) listPage(done *bool, search string, limit, offset int) TaskPage {
+	search = strings.ToLower(strings.TrimSpace(search))
+	filtered := make([]Task, 0)
+	for _, task := range s.list() {
+		if done != nil && task.Done != *done {
+			continue
+		}
+		if search != "" && !strings.Contains(strings.ToLower(task.Title), search) {
+			continue
+		}
+		filtered = append(filtered, task)
+	}
+	total := len(filtered)
+	if offset >= total {
+		filtered = []Task{}
+	} else {
+		filtered = filtered[offset:]
+	}
+	if len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+	return TaskPage{Items: filtered, Total: total, Limit: limit, Offset: offset}
+}
+
 func (s *Store) create(title string) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -180,12 +211,55 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+func parseListOptions(r *http.Request) (*bool, string, int, int, error) {
+	values := r.URL.Query()
+	var done *bool
+	if raw, ok := values["done"]; ok {
+		if len(raw) != 1 {
+			return nil, "", 0, 0, errors.New("done must appear once")
+		}
+		parsed, err := strconv.ParseBool(raw[0])
+		if err != nil {
+			return nil, "", 0, 0, err
+		}
+		done = &parsed
+	}
+	parseInt := func(key string, defaultValue, min, max int) (int, error) {
+		raw, ok := values[key]
+		if !ok {
+			return defaultValue, nil
+		}
+		if len(raw) != 1 {
+			return 0, errors.New("query parameter must appear once")
+		}
+		value, err := strconv.Atoi(raw[0])
+		if err != nil || value < min || (max > 0 && value > max) {
+			return 0, errors.New("query parameter out of range")
+		}
+		return value, nil
+	}
+	limit, err := parseInt("limit", 50, 1, 100)
+	if err != nil {
+		return nil, "", 0, 0, err
+	}
+	offset, err := parseInt("offset", 0, 0, 0)
+	if err != nil {
+		return nil, "", 0, 0, err
+	}
+	return done, values.Get("q"), limit, offset, nil
+}
+
 func taskHandler(store *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tasks" {
 			switch r.Method {
 			case http.MethodGet:
-				writeJSON(w, http.StatusOK, store.list())
+				done, search, limit, offset, err := parseListOptions(r)
+				if err != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "查询参数无效：done 应为 true/false，limit 范围为 1-100，offset 不能为负数"})
+					return
+				}
+				writeJSON(w, http.StatusOK, store.listPage(done, search, limit, offset))
 			case http.MethodPost:
 				var input struct {
 					Title string `json:"title"`

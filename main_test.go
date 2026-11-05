@@ -90,6 +90,51 @@ func TestDataSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestListFiltersAndPaginates(t *testing.T) {
+	store := testStore(t)
+	first, err := store.create("Alpha release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.create("Beta review"); err != nil {
+		t.Fatal(err)
+	}
+	third, err := store.create("Alpha follow-up")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := true
+	if _, err := store.update(first.ID, nil, &done); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.update(third.ID, nil, &done); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	taskHandler(store).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/tasks?done=true&q=alpha&limit=1&offset=1", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	var page TaskPage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || len(page.Items) != 1 || page.Items[0].ID != third.ID || page.Limit != 1 || page.Offset != 1 {
+		t.Fatalf("unexpected page: %+v", page)
+	}
+}
+
+func TestListRejectsInvalidQuery(t *testing.T) {
+	for _, path := range []string{"/api/tasks?done=maybe", "/api/tasks?limit=101", "/api/tasks?offset=-1"} {
+		recorder := httptest.NewRecorder()
+		taskHandler(testStore(t)).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusBadRequest {
+			t.Errorf("path %q: status = %d, want %d", path, recorder.Code, http.StatusBadRequest)
+		}
+	}
+}
+
 func TestCreateRejectsInvalidJSON(t *testing.T) {
 	for _, body := range []string{`{"title":"valid"} {"title":"extra"}`, `{"title":`} {
 		recorder := httptest.NewRecorder()
