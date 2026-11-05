@@ -5,11 +5,22 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
+func testStore(t *testing.T) *Store {
+	t.Helper()
+	store, err := newStore(filepath.Join(t.TempDir(), "tasks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
 func TestTaskLifecycle(t *testing.T) {
-	store := newStore()
+	store := testStore(t)
 	handler := taskHandler(store)
 	created := httptest.NewRecorder()
 	handler.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewBufferString(`{"title":"Ship feature"}`)))
@@ -48,9 +59,51 @@ func TestTaskLifecycle(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsBlankTitle(t *testing.T) {
+func TestDataSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	store, err := newStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.create("持久化任务")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := true
+	if _, err := store.update(created.ID, nil, &done); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := newStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := reopened.list()
+	if len(tasks) != 1 || tasks[0].Title != "持久化任务" || !tasks[0].Done {
+		t.Fatalf("persisted tasks = %+v", tasks)
+	}
+	second, err := reopened.create("第二项")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID <= created.ID {
+		t.Fatalf("new id = %d, want greater than %d", second.ID, created.ID)
+	}
+}
+
+func TestCreateRejectsInvalidJSON(t *testing.T) {
+	for _, body := range []string{`{"title":"valid"} {"title":"extra"}`, `{"title":`} {
+		recorder := httptest.NewRecorder()
+		taskHandler(testStore(t)).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewBufferString(body)))
+		if recorder.Code != http.StatusBadRequest {
+			t.Errorf("body %q: status = %d, want %d", body, recorder.Code, http.StatusBadRequest)
+		}
+	}
+}
+
+func TestCreateRejectsOversizedBody(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	taskHandler(newStore()).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewBufferString(`{"title":"  "}`)))
+	body := strings.Repeat(" ", (1<<20)+1)
+	taskHandler(testStore(t)).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body)))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
