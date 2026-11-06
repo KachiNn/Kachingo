@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -151,5 +152,38 @@ func TestCreateRejectsOversizedBody(t *testing.T) {
 	taskHandler(testStore(t)).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body)))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestTaskHandlerRejectsInvalidOperations(t *testing.T) {
+	store := testStore(t)
+	for _, body := range []string{`{"title":" "}`, `{}`} {
+		recorder := httptest.NewRecorder()
+		taskHandler(store).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body)))
+		if recorder.Code != http.StatusBadRequest {
+			t.Errorf("body %q: status = %d, want %d", body, recorder.Code, http.StatusBadRequest)
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	taskHandler(store).ServeHTTP(recorder, httptest.NewRequest(http.MethodPut, "/api/tasks", nil))
+	if recorder.Code != http.StatusMethodNotAllowed || recorder.Header().Get("Allow") != "GET, POST" {
+		t.Fatalf("unsupported collection method: status=%d allow=%q", recorder.Code, recorder.Header().Get("Allow"))
+	}
+
+	recorder = httptest.NewRecorder()
+	taskHandler(store).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/tasks/not-an-id", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid id status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestNewStoreRejectsMalformedData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newStore(path); err == nil {
+		t.Fatal("newStore should reject malformed JSON")
 	}
 }
