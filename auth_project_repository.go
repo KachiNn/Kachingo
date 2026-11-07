@@ -160,17 +160,31 @@ func (repo sqliteProjectRepository) ListMembers(ctx context.Context, projectID i
 }
 
 func (repo sqliteProjectRepository) RemoveMember(ctx context.Context, projectID, userID int64) (bool, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
 	var role string
-	if err := repo.db.QueryRowContext(ctx, "SELECT role FROM project_members WHERE project_id=? AND user_id=?", projectID, userID).Scan(&role); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT role FROM project_members WHERE project_id=? AND user_id=?", projectID, userID).Scan(&role); err != nil {
 		return false, err
 	}
 	if role == "owner" {
 		return false, errProjectOwnerProtected
 	}
-	result, err := repo.db.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=? AND user_id=?", projectID, userID)
+	if _, err := tx.ExecContext(ctx, "UPDATE project_tasks SET assignee_id=NULL,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=? AND assignee_id=?", projectID, userID); err != nil {
+		return false, err
+	}
+	result, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=? AND user_id=?", projectID, userID)
 	if err != nil {
 		return false, err
 	}
 	count, err := result.RowsAffected()
-	return count > 0, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

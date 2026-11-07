@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,6 +12,36 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+type patchField[T any] struct {
+	Present bool
+	Value   *T
+}
+
+func (field *patchField[T]) UnmarshalJSON(data []byte) error {
+	field.Present = true
+	if string(data) == "null" {
+		field.Value = nil
+		return nil
+	}
+	var value T
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	field.Value = &value
+	return nil
+}
+
+func validateDueDate(value *string) error {
+	if value == nil {
+		return nil
+	}
+	parsed, err := time.Parse("2006-01-02", *value)
+	if err != nil || parsed.Format("2006-01-02") != *value {
+		return errors.New("due_date must use YYYY-MM-DD")
+	}
+	return nil
+}
 
 type v1Server struct {
 	db       *sql.DB
@@ -292,7 +323,31 @@ func (s *v1Server) listTasks(w http.ResponseWriter, r *http.Request, user identi
 		writeJSON(w, 400, map[string]string{"error": "invalid task status"})
 		return
 	}
-	page, err := s.tasks.List(r.Context(), pid, status, strings.TrimSpace(r.URL.Query().Get("q")), limit, offset)
+	assigneeID := int64(0)
+	if raw := r.URL.Query().Get("assignee_id"); raw != "" {
+		assigneeID, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || assigneeID < 1 {
+			writeJSON(w, 400, map[string]string{"error": "invalid assignee_id"})
+			return
+		}
+	}
+	unassignedRaw := r.URL.Query().Get("unassigned")
+	if unassignedRaw != "" && unassignedRaw != "true" && unassignedRaw != "false" {
+		writeJSON(w, 400, map[string]string{"error": "unassigned must be true or false"})
+		return
+	}
+	unassigned := unassignedRaw == "true"
+	if assigneeID > 0 && unassigned {
+		writeJSON(w, 400, map[string]string{"error": "assignee_id and unassigned cannot be combined"})
+		return
+	}
+	overdueRaw := r.URL.Query().Get("overdue")
+	if overdueRaw != "" && overdueRaw != "true" && overdueRaw != "false" {
+		writeJSON(w, 400, map[string]string{"error": "overdue must be true or false"})
+		return
+	}
+	overdue := overdueRaw == "true"
+	page, err := s.tasks.List(r.Context(), pid, status, strings.TrimSpace(r.URL.Query().Get("q")), assigneeID, unassigned, overdue, limit, offset)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
@@ -305,9 +360,11 @@ func (s *v1Server) createTask(w http.ResponseWriter, r *http.Request, user ident
 		return
 	}
 	var in struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Priority    string `json:"priority"`
+		Title       string  `json:"title"`
+		Description string  `json:"description"`
+		Priority    string  `json:"priority"`
+		AssigneeID  *int64  `json:"assignee_id"`
+		DueDate     *string `json:"due_date"`
 	}
 	if decodeJSON(w, r, &in) != nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid JSON body"})
@@ -325,7 +382,19 @@ func (s *v1Server) createTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 400, map[string]string{"error": "invalid priority"})
 		return
 	}
-	task, err := s.tasks.Create(r.Context(), pid, in.Title, in.Description, in.Priority)
+	if in.AssigneeID != nil && *in.AssigneeID < 1 {
+		writeJSON(w, 400, map[string]string{"error": "invalid assignee_id"})
+		return
+	}
+	if err := validateDueDate(in.DueDate); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	task, err := s.tasks.Create(r.Context(), pid, in.Title, in.Description, in.Priority, in.AssigneeID, in.DueDate)
+	if errors.Is(err, errAssigneeNotProjectMember) {
+		writeJSON(w, 400, map[string]string{"error": "assignee must be a project member"})
+		return
+	}
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
@@ -343,11 +412,13 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 		return
 	}
 	var in struct {
-		Title       *string `json:"title"`
-		Description *string `json:"description"`
-		Status      *string `json:"status"`
-		Priority    *string `json:"priority"`
-		Version     *int64  `json:"version"`
+		Title       *string            `json:"title"`
+		Description *string            `json:"description"`
+		Status      *string            `json:"status"`
+		Priority    *string            `json:"priority"`
+		AssigneeID  patchField[int64]  `json:"assignee_id"`
+		DueDate     patchField[string] `json:"due_date"`
+		Version     *int64             `json:"version"`
 	}
 	if decodeJSON(w, r, &in) != nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid JSON body"})
@@ -357,7 +428,7 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 428, map[string]string{"error": "current task version is required"})
 		return
 	}
-	if in.Title == nil && in.Description == nil && in.Status == nil && in.Priority == nil {
+	if in.Title == nil && in.Description == nil && in.Status == nil && in.Priority == nil && !in.AssigneeID.Present && !in.DueDate.Present {
 		writeJSON(w, 400, map[string]string{"error": "invalid JSON body or no fields"})
 		return
 	}
@@ -394,7 +465,25 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 			return
 		}
 	}
+	if in.AssigneeID.Present {
+		t.AssigneeID = in.AssigneeID.Value
+	}
+	if t.AssigneeID != nil && *t.AssigneeID < 1 {
+		writeJSON(w, 400, map[string]string{"error": "invalid assignee_id"})
+		return
+	}
+	if in.DueDate.Present {
+		t.DueDate = in.DueDate.Value
+	}
+	if err := validateDueDate(t.DueDate); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
 	updated, err := s.tasks.Update(r.Context(), t, *in.Version)
+	if errors.Is(err, errAssigneeNotProjectMember) {
+		writeJSON(w, 400, map[string]string{"error": "assignee must be a project member"})
+		return
+	}
 	if errors.Is(err, errTaskVersionConflict) {
 		writeJSON(w, 409, map[string]string{"error": "task was changed by another request"})
 		return

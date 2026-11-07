@@ -4,6 +4,7 @@
 
 - 抽出任务、认证/session、项目成员 SQLite repositories；任务版本乐观锁拒绝缺失版本和过期更新。
 - 增加项目成员列表/移除接口、owner 保护，以及 request ID 和不记录敏感数据的 HTTP 访问日志。
+- 新增任务负责人、截止日期、负责人/逾期筛选；移除成员时自动清理其任务指派并推进版本。
 - 新增项目成员列表与 owner 移除成员能力，保护项目 owner，并验证移除后的权限即时失效。
 - 新增 SQLite schema migration、用户注册登录、bcrypt 密码哈希和可撤销 bearer session。
 - 新增项目创建、owner 邀请 editor/viewer、成员权限检查和项目级资源隔离。

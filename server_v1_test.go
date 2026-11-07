@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -112,13 +113,28 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if addedAgain := callAPI(handler, http.MethodPost, membersPath, owner, apiJSON(t, map[string]string{"email": "viewer@example.com", "role": "viewer"})); addedAgain.Code != http.StatusCreated {
 		t.Fatalf("re-add member status=%d body=%s", addedAgain.Code, addedAgain.Body.String())
 	}
-	createdTask := callAPI(handler, http.MethodPost, projectPath+"/tasks", owner, apiJSON(t, map[string]string{"title": "Review concurrency", "priority": "high"}))
+	var outsiderID int64
+	if err := db.QueryRow("SELECT id FROM users WHERE email=?", "outsider@example.com").Scan(&outsiderID); err != nil {
+		t.Fatal(err)
+	}
+	invalidAssignee := callAPI(handler, http.MethodPost, projectPath+"/tasks", owner, apiJSON(t, map[string]any{"title": "Bad assignee", "assignee_id": outsiderID}))
+	if invalidAssignee.Code != http.StatusBadRequest {
+		t.Fatalf("non-member assignee status=%d body=%s", invalidAssignee.Code, invalidAssignee.Body.String())
+	}
+	invalidDate := callAPI(handler, http.MethodPost, projectPath+"/tasks", owner, apiJSON(t, map[string]any{"title": "Bad date", "due_date": "2026-02-30"}))
+	if invalidDate.Code != http.StatusBadRequest {
+		t.Fatalf("invalid due date status=%d", invalidDate.Code)
+	}
+	createdTask := callAPI(handler, http.MethodPost, projectPath+"/tasks", owner, apiJSON(t, map[string]any{"title": "Review concurrency", "priority": "high", "assignee_id": members[1].User.ID, "due_date": "2000-01-01"}))
 	if createdTask.Code != http.StatusCreated {
 		t.Fatalf("create task status=%d body=%s", createdTask.Code, createdTask.Body.String())
 	}
 	var task projectTask
 	decodeResponse(t, createdTask, &task)
-	listed := callAPI(handler, http.MethodGet, projectPath+"/tasks?status=open&limit=10", viewer, "")
+	if task.AssigneeID == nil || *task.AssigneeID != members[1].User.ID || task.DueDate == nil || *task.DueDate != "2000-01-01" {
+		t.Fatalf("assignment or due date missing: %+v", task)
+	}
+	listed := callAPI(handler, http.MethodGet, projectPath+"/tasks?status=open&limit=10&assignee_id="+strconv.FormatInt(members[1].User.ID, 10)+"&overdue=true", viewer, "")
 	if listed.Code != http.StatusOK {
 		t.Fatalf("viewer list status=%d body=%s", listed.Code, listed.Body.String())
 	}
@@ -145,6 +161,19 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if current.Version != task.Version+1 {
 		t.Fatalf("updated version=%d, want %d", current.Version, task.Version+1)
 	}
+	clearFields := callAPI(handler, http.MethodPatch, taskPath, owner, apiJSON(t, map[string]any{"assignee_id": nil, "due_date": nil, "version": current.Version}))
+	if clearFields.Code != http.StatusOK {
+		t.Fatalf("clear fields status=%d body=%s", clearFields.Code, clearFields.Body.String())
+	}
+	var cleared projectTask
+	decodeResponse(t, clearFields, &cleared)
+	if cleared.AssigneeID != nil || cleared.DueDate != nil {
+		t.Fatalf("nullable fields not cleared: %+v", cleared)
+	}
+	reassign := callAPI(handler, http.MethodPatch, taskPath, owner, apiJSON(t, map[string]any{"assignee_id": members[1].User.ID, "due_date": "2099-12-31", "version": cleared.Version}))
+	if reassign.Code != http.StatusOK {
+		t.Fatalf("reassign status=%d body=%s", reassign.Code, reassign.Body.String())
+	}
 	stale := callAPI(handler, http.MethodPatch, taskPath, owner, updateBody)
 	if stale.Code != http.StatusConflict {
 		t.Fatalf("stale update status=%d body=%s", stale.Code, stale.Body.String())
@@ -156,6 +185,35 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	isolated := callAPI(handler, http.MethodGet, projectPath+"/tasks", outsider, "")
 	if isolated.Code != http.StatusNotFound {
 		t.Fatalf("outsider status=%d", isolated.Code)
+	}
+	assignedFilter := callAPI(handler, http.MethodGet, projectPath+"/tasks?assignee_id="+strconv.FormatInt(members[1].User.ID, 10), owner, "")
+	var assignedPage struct {
+		Items []projectTask `json:"items"`
+		Total int           `json:"total"`
+	}
+	decodeResponse(t, assignedFilter, &assignedPage)
+	if assignedPage.Total != 1 {
+		t.Fatalf("assigned filter total=%d", assignedPage.Total)
+	}
+	unassignedFilter := callAPI(handler, http.MethodGet, projectPath+"/tasks?unassigned=true", owner, "")
+	var unassignedPage struct {
+		Items []projectTask `json:"items"`
+		Total int           `json:"total"`
+	}
+	decodeResponse(t, unassignedFilter, &unassignedPage)
+	if unassignedPage.Total != 0 {
+		t.Fatalf("unassigned filter total=%d", unassignedPage.Total)
+	}
+	removeAssignedMember := callAPI(handler, http.MethodDelete, membersPath+"/"+strconv.FormatInt(members[1].User.ID, 10), owner, "")
+	if removeAssignedMember.Code != http.StatusNoContent {
+		t.Fatalf("remove assigned member status=%d", removeAssignedMember.Code)
+	}
+	afterRemoval, err := (&sqliteProjectTaskRepository{db: db}).Get(context.Background(), p.ID, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterRemoval.AssigneeID != nil || afterRemoval.Version <= current.Version {
+		t.Fatalf("removed assignee was retained or version did not advance: %+v", afterRemoval)
 	}
 	loggedOut := callAPI(handler, http.MethodPost, "/api/v1/auth/logout", viewer, "")
 	if loggedOut.Code != http.StatusNoContent {

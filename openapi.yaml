@@ -118,6 +118,9 @@ paths:
         - { name: projectID, in: path, required: true, schema: { type: integer } }
         - { name: status, in: query, schema: { type: string, enum: [open, in_progress, done] } }
         - { name: q, in: query, schema: { type: string } }
+        - { name: assignee_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: unassigned, in: query, schema: { type: boolean } }
+        - { name: overdue, in: query, schema: { type: boolean } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
@@ -138,6 +141,8 @@ paths:
                 title: { type: string, maxLength: 200 }
                 description: { type: string }
                 priority: { type: string, enum: [low, normal, high], default: normal }
+                assignee_id: { type: [integer, "null"], minimum: 1, description: Must identify a member of this project }
+                due_date: { type: [string, "null"], format: date }
       responses:
         '201': { description: Task created }
         '403': { description: Viewer cannot write }
@@ -159,6 +164,8 @@ paths:
                 description: { type: string }
                 status: { type: string, enum: [open, in_progress, done] }
                 priority: { type: string, enum: [low, normal, high] }
+                assignee_id: { type: [integer, "null"], minimum: 1, description: Null clears the assignment }
+                due_date: { type: [string, "null"], format: date, description: Null clears the due date }
                 version: { type: integer, minimum: 1, description: Version returned by the latest read }
       responses:
         '200': { description: Task updated; version is incremented }

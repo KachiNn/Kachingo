@@ -105,20 +105,22 @@ type project struct {
 }
 
 type projectMember struct {
-	User identity `json:"user"`
-	Role string `json:"role"`
-	JoinedAt string `json:"joined_at"`
+	User     identity `json:"user"`
+	Role     string   `json:"role"`
+	JoinedAt string   `json:"joined_at"`
 }
 type projectTask struct {
-	ID          int64  `json:"id"`
-	ProjectID   int64  `json:"project_id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Priority    string `json:"priority"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
-	Version     int64  `json:"version"`
+	ID          int64   `json:"id"`
+	ProjectID   int64   `json:"project_id"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Status      string  `json:"status"`
+	Priority    string  `json:"priority"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
+	Version     int64   `json:"version"`
+	AssigneeID  *int64  `json:"assignee_id"`
+	DueDate     *string `json:"due_date"`
 }
 
 type projectTaskPage struct {

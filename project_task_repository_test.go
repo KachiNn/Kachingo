@@ -19,15 +19,15 @@ func TestDatabaseMigrationsAreIdempotent(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Fatalf("applied migrations=%d, want 2", count)
+	if count != 3 {
+		t.Fatalf("applied migrations=%d, want 3", count)
 	}
 	rows, err := db.Query("PRAGMA table_info(project_tasks)")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	foundVersion := false
+	foundVersion, foundAssignee, foundDueDate := false, false, false
 	for rows.Next() {
 		var cid, notNull, primaryKey int
 		var name, dataType string
@@ -35,14 +35,19 @@ func TestDatabaseMigrationsAreIdempotent(t *testing.T) {
 		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
 			t.Fatal(err)
 		}
-		if name == "version" {
+		switch name {
+		case "version":
 			foundVersion = true
+		case "assignee_id":
+			foundAssignee = true
+		case "due_date":
+			foundDueDate = true
 		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if !foundVersion {
-		t.Fatal("task version migration was not applied")
+	if !foundVersion || !foundAssignee || !foundDueDate {
+		t.Fatalf("task migrations missing fields: version=%t assignee=%t due_date=%t", foundVersion, foundAssignee, foundDueDate)
 	}
 }
