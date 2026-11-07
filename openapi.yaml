@@ -136,13 +136,17 @@ paths:
           application/json:
             schema:
               type: object
+              required: [version]
               properties:
                 title: { type: string, maxLength: 200 }
                 description: { type: string }
                 status: { type: string, enum: [open, in_progress, done] }
                 priority: { type: string, enum: [low, normal, high] }
+                version: { type: integer, minimum: 1, description: Version returned by the latest read }
       responses:
-        '200': { description: Task updated }
+        '200': { description: Task updated; version is incremented }
+        '409': { description: Task changed since the supplied version }
+        '428': { description: Version is required }
         '403': { description: Viewer cannot write }
         '404': { description: Task not found }
     delete:

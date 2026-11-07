@@ -2,6 +2,7 @@
 
 ## 2026-11-07
 
+- 抽出项目任务 SQLite repository；新增任务版本迁移和乐观锁，拒绝缺失版本及过期版本更新。
 - 新增 SQLite schema migration、用户注册登录、bcrypt 密码哈希和可撤销 bearer session。
 - 新增项目创建、owner 邀请 editor/viewer、成员权限检查和项目级资源隔离。
 - 新增项目任务 CRUD、状态筛选、关键词搜索、优先级和分页。

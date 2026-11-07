@@ -63,7 +63,7 @@ curl -X POST http://localhost:8080/api/v1/projects/1/tasks \
   -d '{"title":"Review Go concurrency","priority":"high"}'
 ```
 
-任务状态为 `open`、`in_progress` 或 `done`；优先级为 `low`、`normal` 或 `high`。任务列表支持 `status`、`q`、`limit`（1-100）和 `offset` 查询参数。没有项目成员关系时，项目返回 404；viewer 写入返回 403。
+任务状态为 `open`、`in_progress` 或 `done`；优先级为 `low`、`normal` 或 `high`。任务列表支持 `status`、`q`、`limit`（1-100）和 `offset` 查询参数。任务响应包含 `version`；更新时必须提交刚读取到的版本，成功后版本递增，过期版本返回 409，缺少版本返回 428。没有项目成员关系时，项目返回 404；viewer 写入返回 403。
 
 ## 代码结构
 

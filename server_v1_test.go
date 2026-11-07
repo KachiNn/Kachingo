@@ -105,7 +105,26 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if page.Total != 1 || len(page.Items) != 1 {
 		t.Fatalf("unexpected page: %+v", page)
 	}
-	denied := callAPI(handler, http.MethodPatch, projectPath+"/tasks/"+strconv.FormatInt(task.ID, 10), viewer, apiJSON(t, map[string]string{"status": "done"}))
+	taskPath := projectPath + "/tasks/" + strconv.FormatInt(task.ID, 10)
+	missingVersion := callAPI(handler, http.MethodPatch, taskPath, owner, apiJSON(t, map[string]string{"status": "done"}))
+	if missingVersion.Code != http.StatusPreconditionRequired {
+		t.Fatalf("missing version status=%d body=%s", missingVersion.Code, missingVersion.Body.String())
+	}
+	updateBody := apiJSON(t, map[string]any{"status": "done", "version": task.Version})
+	updated := callAPI(handler, http.MethodPatch, taskPath, owner, updateBody)
+	if updated.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", updated.Code, updated.Body.String())
+	}
+	var current projectTask
+	decodeResponse(t, updated, &current)
+	if current.Version != task.Version+1 {
+		t.Fatalf("updated version=%d, want %d", current.Version, task.Version+1)
+	}
+	stale := callAPI(handler, http.MethodPatch, taskPath, owner, updateBody)
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale update status=%d body=%s", stale.Code, stale.Body.String())
+	}
+	denied := callAPI(handler, http.MethodPatch, taskPath, viewer, apiJSON(t, map[string]any{"status": "open", "version": current.Version}))
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("viewer update status=%d body=%s", denied.Code, denied.Body.String())
 	}

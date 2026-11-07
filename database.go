@@ -112,4 +112,12 @@ type projectTask struct {
 	Priority    string `json:"priority"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
+	Version     int64  `json:"version"`
+}
+
+type projectTaskPage struct {
+	Items  []projectTask `json:"items"`
+	Total  int           `json:"total"`
+	Limit  int           `json:"limit"`
+	Offset int           `json:"offset"`
 }

@@ -12,9 +12,15 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type v1Server struct{ db *sql.DB }
+type v1Server struct {
+	db    *sql.DB
+	tasks projectTaskRepository
+}
 
 func (s *v1Server) routes() http.Handler {
+	if s.tasks == nil {
+		s.tasks = sqliteProjectTaskRepository{db: s.db}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/auth/register", s.register)
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
@@ -260,32 +266,12 @@ func (s *v1Server) listTasks(w http.ResponseWriter, r *http.Request, user identi
 		writeJSON(w, 400, map[string]string{"error": "invalid task status"})
 		return
 	}
-	q := "%" + strings.TrimSpace(r.URL.Query().Get("q")) + "%"
-	var total int
-	if err := s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM project_tasks WHERE project_id=? AND (?='' OR status=?) AND title LIKE ?", pid, status, status, q).Scan(&total); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "database error"})
-		return
-	}
-	rows, err := s.db.QueryContext(r.Context(), "SELECT id,project_id,title,description,status,priority,created_at,updated_at FROM project_tasks WHERE project_id=? AND (?='' OR status=?) AND title LIKE ? ORDER BY id LIMIT ? OFFSET ?", pid, status, status, q, limit, offset)
+	page, err := s.tasks.List(r.Context(), pid, status, strings.TrimSpace(r.URL.Query().Get("q")), limit, offset)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
-	defer rows.Close()
-	items := make([]projectTask, 0)
-	for rows.Next() {
-		var t projectTask
-		if err := rows.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			writeJSON(w, 500, map[string]string{"error": "database error"})
-			return
-		}
-		items = append(items, t)
-	}
-	if rows.Err() != nil {
-		writeJSON(w, 500, map[string]string{"error": "database error"})
-		return
-	}
-	writeJSON(w, 200, map[string]any{"items": items, "total": total, "limit": limit, "offset": offset})
+	writeJSON(w, 200, page)
 }
 func (s *v1Server) createTask(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := s.authorize(w, r, user, true)
@@ -313,19 +299,12 @@ func (s *v1Server) createTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 400, map[string]string{"error": "invalid priority"})
 		return
 	}
-	res, err := s.db.ExecContext(r.Context(), "INSERT INTO project_tasks(project_id,title,description,priority) VALUES(?,?,?,?)", pid, in.Title, in.Description, in.Priority)
+	task, err := s.tasks.Create(r.Context(), pid, in.Title, in.Description, in.Priority)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
-	id, _ := res.LastInsertId()
-	var t projectTask
-	err = s.db.QueryRowContext(r.Context(), "SELECT id,project_id,title,description,status,priority,created_at,updated_at FROM project_tasks WHERE id=?", id).Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.CreatedAt, &t.UpdatedAt)
-	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "database error"})
-		return
-	}
-	writeJSON(w, 201, t)
+	writeJSON(w, 201, task)
 }
 func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := s.authorize(w, r, user, true)
@@ -342,13 +321,21 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 		Description *string `json:"description"`
 		Status      *string `json:"status"`
 		Priority    *string `json:"priority"`
+		Version     *int64  `json:"version"`
 	}
-	if decodeJSON(w, r, &in) != nil || in.Title == nil && in.Description == nil && in.Status == nil && in.Priority == nil {
+	if decodeJSON(w, r, &in) != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if in.Version == nil || *in.Version < 1 {
+		writeJSON(w, 428, map[string]string{"error": "current task version is required"})
+		return
+	}
+	if in.Title == nil && in.Description == nil && in.Status == nil && in.Priority == nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid JSON body or no fields"})
 		return
 	}
-	var t projectTask
-	err = s.db.QueryRowContext(r.Context(), "SELECT id,project_id,title,description,status,priority,created_at,updated_at FROM project_tasks WHERE id=? AND project_id=?", tid, pid).Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.CreatedAt, &t.UpdatedAt)
+	t, err := s.tasks.Get(r.Context(), pid, tid)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "task not found"})
 		return
@@ -381,12 +368,20 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 			return
 		}
 	}
-	if _, err = s.db.ExecContext(r.Context(), "UPDATE project_tasks SET title=?,description=?,status=?,priority=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND project_id=?", t.Title, t.Description, t.Status, t.Priority, tid, pid); err != nil {
+	updated, err := s.tasks.Update(r.Context(), t, *in.Version)
+	if errors.Is(err, errTaskVersionConflict) {
+		writeJSON(w, 409, map[string]string{"error": "task was changed by another request"})
+		return
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "task not found"})
+		return
+	}
+	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
-	_ = s.db.QueryRowContext(r.Context(), "SELECT updated_at FROM project_tasks WHERE id=?", tid).Scan(&t.UpdatedAt)
-	writeJSON(w, 200, t)
+	writeJSON(w, 200, updated)
 }
 func (s *v1Server) deleteTask(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := s.authorize(w, r, user, true)
@@ -398,13 +393,12 @@ func (s *v1Server) deleteTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 400, map[string]string{"error": "invalid task id"})
 		return
 	}
-	res, err := s.db.ExecContext(r.Context(), "DELETE FROM project_tasks WHERE id=? AND project_id=?", tid, pid)
+	deleted, err := s.tasks.Delete(r.Context(), pid, tid)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if !deleted {
 		writeJSON(w, 404, map[string]string{"error": "task not found"})
 		return
 	}
