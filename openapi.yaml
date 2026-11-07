@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: Kachingo API
+  version: 1.0.0
+  description: Multi-user project and task collaboration API.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/auth/register:
+    post:
+      security: []
+      summary: Register an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, password]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string, maxLength: 100 }
+                password: { type: string, minLength: 12, maxLength: 72 }
+      responses:
+        '201': { description: Account created }
+        '400': { description: Invalid input }
+        '409': { description: Email already registered }
+  /api/v1/auth/login:
+    post:
+      security: []
+      summary: Create a bearer session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Session created }
+        '401': { description: Invalid credentials }
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke the current session
+      responses:
+        '204': { description: Session revoked }
+        '401': { description: Missing or invalid bearer token }
+  /api/v1/me:
+    get:
+      summary: Return the authenticated user
+      responses:
+        '200': { description: Current user }
+        '401': { description: Missing or invalid bearer token }
+  /api/v1/projects:
+    get:
+      summary: List projects the current user belongs to
+      responses:
+        '200': { description: Project list }
+        '401': { description: Missing or invalid bearer token }
+    post:
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 120 }
+      responses:
+        '201': { description: Project created; creator is owner }
+        '400': { description: Invalid input }
+  /api/v1/projects/{projectID}/members:
+    post:
+      summary: Add a project member (owner only)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { type: string, enum: [editor, viewer] }
+      responses:
+        '201': { description: Member added }
+        '404': { description: Project or user not found }
+  /api/v1/projects/{projectID}/tasks:
+    get:
+      summary: List project tasks
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string, enum: [open, in_progress, done] } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200': { description: Paginated task list }
+        '404': { description: Project not found }
+    post:
+      summary: Create a project task (owner/editor)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 200 }
+                description: { type: string }
+                priority: { type: string, enum: [low, normal, high], default: normal }
+      responses:
+        '201': { description: Task created }
+        '403': { description: Viewer cannot write }
+  /api/v1/projects/{projectID}/tasks/{taskID}:
+    patch:
+      summary: Update a project task (owner/editor)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: taskID, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 200 }
+                description: { type: string }
+                status: { type: string, enum: [open, in_progress, done] }
+                priority: { type: string, enum: [low, normal, high] }
+      responses:
+        '200': { description: Task updated }
+        '403': { description: Viewer cannot write }
+        '404': { description: Task not found }
+    delete:
+      summary: Delete a project task (owner/editor)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: taskID, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Task deleted }
+        '403': { description: Viewer cannot write }
+        '404': { description: Task not found }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque session token

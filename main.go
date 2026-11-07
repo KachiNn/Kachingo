@@ -353,6 +353,15 @@ func main() {
 	if dataFile == "" {
 		dataFile = "data/tasks.json"
 	}
+	databaseFile := os.Getenv("DATABASE_FILE")
+	if databaseFile == "" {
+		databaseFile = "data/kachingo.db"
+	}
+	db, err := openDatabase(databaseFile)
+	if err != nil {
+		log.Fatalf("加载 SQLite 数据库失败（%s）：%v", databaseFile, err)
+	}
+	defer db.Close()
 	store, err := newStore(dataFile)
 	if err != nil {
 		log.Fatalf("加载任务数据失败（%s）：%v", dataFile, err)
@@ -363,6 +372,7 @@ func main() {
 	})
 	mux.HandleFunc("/api/tasks", taskHandler(store))
 	mux.HandleFunc("/api/tasks/", taskHandler(store))
+	mux.Handle("/api/v1/", (&v1Server{db: db}).routes())
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -380,7 +390,7 @@ func main() {
 		defer cancel()
 		_ = server.Shutdown(ctx)
 	}()
-	log.Printf("任务 API 正在监听 %s（数据文件：%s）", addr, dataFile)
+	log.Printf("任务 API 正在监听 %s（SQLite：%s；旧版 JSON：%s）", addr, databaseFile, dataFile)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

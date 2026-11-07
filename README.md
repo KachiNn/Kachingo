@@ -1,102 +1,108 @@
-# Kachingo 任务管理 API
+# Kachingo
 
-一个使用 Go 标准库编写的轻量级任务管理 REST API，适合本地运行、学习 Go 后端服务结构，以及作为小型服务的起点。无需安装第三方依赖。
+Kachingo 是一个用 Go 构建的轻量级项目任务协作服务。它提供用户注册、会话认证、项目成员角色和项目内任务管理，适合本地运行、阅读代码和作为后端工程实践项目。
 
 ## 功能
 
-- 任务创建、列表、修改和删除（CRUD）
-- JSON 文件持久化，服务重启后自动恢复任务
-- 任务列表支持完成状态筛选、标题关键词搜索和分页
-- 并发安全的数据访问，任务按 ID 顺序返回
-- 请求体大小限制、JSON 格式校验和明确的错误状态码
-- 健康检查接口与优雅关闭
-- 服务端读写、空闲连接和请求头超时保护
-- 自动化测试覆盖任务生命周期、数据恢复、筛选分页和无效请求
+- 邮箱注册与登录；密码使用 bcrypt 哈希，登录凭证为随机 bearer session，数据库仅保存 token 摘要
+- 项目创建与成员邀请，角色分为 owner、editor、viewer
+- 项目任务增删改查，支持状态、关键词、分页和优先级
+- SQLite 持久化，外键约束、索引和按版本执行的 SQL migration
+- 项目资源按成员关系隔离；viewer 只读
+- 原有 `/api/tasks` JSON 文件接口暂时保留，便于兼容旧用法
+- HTTP 服务超时、请求体大小限制、健康检查和优雅关闭
 
-## 环境要求
+## 快速开始
 
-- Go 1.22 或更新版本
-
-## 启动
-
-在仓库根目录执行：
+要求 Go 1.22 或更新版本。SQLite 驱动为纯 Go 实现，常规构建不需要 CGO 或 GCC。
 
 ```sh
 go run .
 ```
 
-默认监听地址为 `:8080`，数据保存在 `data/tasks.json`。可以通过环境变量修改：
+服务默认监听 `:8080`，SQLite 数据默认保存到 `data/kachingo.db`。首次启动会自动创建数据库并运行 `migrations/` 中尚未应用的迁移。
 
-PowerShell：
-
-```powershell
-$env:ADDR = ":9090"
-$env:DATA_FILE = "./data/tasks.json"
-go run .
-```
-
-macOS / Linux：
-
-```sh
-ADDR=:9090 DATA_FILE=./data/tasks.json go run .
-```
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `ADDR` | `:8080` | HTTP 监听地址 |
+| `DATABASE_FILE` | `data/kachingo.db` | 新版协作 API 的 SQLite 数据库 |
+| `DATA_FILE` | `data/tasks.json` | 旧版 `/api/tasks` 接口的数据文件 |
 
 ## API
 
+新版接口统一使用 `/api/v1`。除注册和登录外，其余业务接口需要传入 `Authorization: Bearer <token>`。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/healthz` | 健康检查 |
-| `GET` | `/api/tasks` | 获取任务列表，支持筛选和分页 |
-| `POST` | `/api/tasks` | 创建任务，必填 `title` |
-| `PATCH` | `/api/tasks/{id}` | 修改 `title` 和/或 `done` |
-| `DELETE` | `/api/tasks/{id}` | 删除任务 |
+| `POST` | `/api/v1/auth/register` | 注册用户；字段 `email`、`name`、`password` |
+| `POST` | `/api/v1/auth/login` | 登录并返回 24 小时 bearer session |
+| `POST` | `/api/v1/auth/logout` | 撤销当前 session |
+| `GET` | `/api/v1/me` | 获取当前用户 |
+| `GET` / `POST` | `/api/v1/projects` | 列出已加入项目 / 创建项目 |
+| `POST` | `/api/v1/projects/{projectID}/members` | owner 按邮箱添加 editor 或 viewer |
+| `GET` / `POST` | `/api/v1/projects/{projectID}/tasks` | 列出 / 创建项目任务 |
+| `PATCH` / `DELETE` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 更新 / 删除项目任务 |
 
-列表接口支持以下查询参数：
-
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `done` | 不筛选 | `true` 只看已完成，`false` 只看未完成 |
-| `q` | 空 | 按标题关键词搜索，不区分大小写 |
-| `limit` | 50 | 每页数量，范围为 1 到 100 |
-| `offset` | 0 | 跳过的记录数，不能为负数 |
-
-筛选和分页示例：
+注册请求示例：
 
 ```sh
-curl 'http://localhost:8080/api/tasks?done=false&q=Go&limit=10&offset=0'
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"dev@example.com","name":"Dev","password":"change-this-password"}'
 ```
 
-列表响应包含 `items`（当前页任务）、`total`（筛选后的总数）、`limit` 和 `offset`。
-
-创建任务示例：
+创建项目并添加任务需要先登录，在请求头中使用登录响应里的 `token`：
 
 ```sh
-curl -X POST http://localhost:8080/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"title":"完成 Go 服务"}'
+curl -X POST http://localhost:8080/api/v1/projects \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"name":"Interview Prep"}'
+
+curl -X POST http://localhost:8080/api/v1/projects/1/tasks \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"title":"Review Go concurrency","priority":"high"}'
 ```
 
-返回示例：
+任务状态为 `open`、`in_progress` 或 `done`；优先级为 `low`、`normal` 或 `high`。任务列表支持 `status`、`q`、`limit`（1-100）和 `offset` 查询参数。没有项目成员关系时，项目返回 404；viewer 写入返回 403。
 
-```json
-{
-  "id": 1,
-  "title": "完成 Go 服务",
-  "done": false,
-  "created_at": "2025-01-01T00:00:00Z"
-}
-```
+## 代码结构
 
-## 测试与构建
+- `main.go`：旧接口、HTTP 服务启动和关闭
+- `server_v1.go`：新版路由、认证校验、业务请求处理
+- `database.go`：SQLite 初始化、migration 执行和响应模型
+- `auth.go`：密码校验及 session token 生成
+- `migrations/`：数据库结构变更脚本，按序号执行
+- `*_test.go`：旧接口测试和新版 HTTP/SQLite 集成测试
+
+## 校验
 
 ```sh
 go test ./...
 go vet ./...
+go test -race ./...
 go build -o kachingo .
 ```
 
-Windows 环境若启用了 CGO，可额外运行 `go test -race ./...` 检查并发访问；若未启用 CGO，该命令会被 Go 工具链拒绝。
+`-race` 需要 CGO 和可用的 C 编译器；其他命令不需要 GCC。
 
-## 数据说明
+## 本地容器运行
 
-任务数据默认写入 `data/tasks.json`。删除或移动该文件会影响已有数据；如需更换位置，请在启动时设置 `DATA_FILE`。当前存储适用于单个服务实例，不适合多个实例同时写入同一个文件的生产部署。
+安装 Docker Compose 后，在仓库根目录运行：
+
+```sh
+docker compose up --build
+```
+
+容器以非 root 用户运行，数据保存在命名卷 `kachingo-data`。停止服务使用 `docker compose down`；保留数据卷。
+
+## API 契约与 CI
+
+OpenAPI 3.1 契约位于 `openapi.yaml`。GitHub Actions 在 Go 1.22 上自动执行测试、`go vet` 和构建。
+
+## 数据与边界
+
+新版协作接口使用 SQLite，适合单实例部署和教学演示；SQLite 文件应纳入备份。多实例生产部署需要 PostgreSQL 等服务端数据库，目前尚未提供 PostgreSQL 驱动或部署配置。旧版 JSON API 和新版 SQLite API 是两套独立存储，旧 JSON 数据不会自动迁移。
+
+## 开发记录
+
+本仓库的阶段性变更记录见 [CHANGELOG.md](CHANGELOG.md)。

@@ -1,0 +1,15 @@
+services:
+  kachingo:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      ADDR: ":8080"
+      DATABASE_FILE: /data/kachingo.db
+      DATA_FILE: /data/tasks.json
+    volumes:
+      - kachingo-data:/data
+    restart: unless-stopped
+
+volumes:
+  kachingo-data:
