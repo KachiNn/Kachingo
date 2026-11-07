@@ -30,7 +30,7 @@ go run .
 
 ## API
 
-新版接口统一使用 `/api/v1`。除注册和登录外，其余业务接口需要传入 `Authorization: Bearer <token>`。
+`GET /healthz` 检查进程存活；`GET /readyz` 通过有时限的数据库 Ping 检查服务是否可接收流量，数据库不可用时返回 503。新版业务接口统一使用 `/api/v1`。除注册和登录外，其余业务接口需要传入 `Authorization: Bearer <token>`。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -97,7 +97,7 @@ go build -o kachingo .
 docker compose up --build
 ```
 
-容器以非 root 用户运行，数据保存在命名卷 `kachingo-data`。停止服务使用 `docker compose down`；保留数据卷。
+容器以非 root 用户运行，Docker healthcheck 通过 `/readyz` 检查数据库连接，数据保存在命名卷 `kachingo-data`。停止服务使用 `docker compose down`；保留数据卷。
 
 ## API 契约与 CI
 

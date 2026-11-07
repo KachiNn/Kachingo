@@ -8,6 +8,19 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /healthz:
+    get:
+      security: []
+      summary: Check process liveness
+      responses:
+        '200': { description: Process is alive }
+  /readyz:
+    get:
+      security: []
+      summary: Check database readiness
+      responses:
+        '200': { description: Database is ready }
+        '503': { description: Database is unavailable }
   /api/v1/auth/register:
     post:
       security: []

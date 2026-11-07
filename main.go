@@ -370,6 +370,7 @@ func main() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /readyz", readinessHandler(db))
 	mux.HandleFunc("/api/tasks", taskHandler(store))
 	mux.HandleFunc("/api/tasks/", taskHandler(store))
 	mux.Handle("/api/v1/", (&v1Server{db: db}).routes())
