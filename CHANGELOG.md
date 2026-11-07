@@ -7,7 +7,7 @@
 - 新增项目任务 CRUD、状态筛选、关键词搜索、优先级和分页。
 - 保留旧版 JSON 任务接口，并在 README 说明两套接口的数据边界。
 - 集成测试覆盖 owner/viewer/非成员访问和登出后的 session 撤销。
-- 增加 Go 1.22 GitHub Actions 校验、非 root 多阶段 Docker 镜像、Compose 配置和 OpenAPI 3.1 契约。
+- 增加 Go 1.22 GitHub Actions 校验、非 root 多阶段 Docker 镜像、Compose 配置和 OpenAPI 3.1 契约；CI 会构建镜像并检查 Compose 配置。
 
 ## 2026-11-06
 
