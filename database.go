@@ -103,6 +103,12 @@ type project struct {
 	Role      string `json:"role"`
 	CreatedAt string `json:"created_at"`
 }
+
+type projectMember struct {
+	User identity `json:"user"`
+	Role string `json:"role"`
+	JoinedAt string `json:"joined_at"`
+}
 type projectTask struct {
 	ID          int64  `json:"id"`
 	ProjectID   int64  `json:"project_id"`

@@ -87,6 +87,31 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if added.Code != http.StatusCreated {
 		t.Fatalf("add member status=%d body=%s", added.Code, added.Body.String())
 	}
+	membersPath := projectPath + "/members"
+	listedMembers := callAPI(handler, http.MethodGet, membersPath, viewer, "")
+	if listedMembers.Code != http.StatusOK {
+		t.Fatalf("list members status=%d", listedMembers.Code)
+	}
+	var members []projectMember
+	decodeResponse(t, listedMembers, &members)
+	if len(members) != 2 || members[0].Role != "owner" || members[1].Role != "viewer" {
+		t.Fatalf("unexpected members: %+v", members)
+	}
+	removeOwner := callAPI(handler, http.MethodDelete, membersPath+"/"+strconv.FormatInt(p.ID, 10), owner, "")
+	if removeOwner.Code != http.StatusConflict {
+		t.Fatalf("owner removal status=%d", removeOwner.Code)
+	}
+	removeViewer := callAPI(handler, http.MethodDelete, membersPath+"/"+strconv.FormatInt(members[1].User.ID, 10), owner, "")
+	if removeViewer.Code != http.StatusNoContent {
+		t.Fatalf("member removal status=%d body=%s", removeViewer.Code, removeViewer.Body.String())
+	}
+	removedAccess := callAPI(handler, http.MethodGet, projectPath+"/tasks", viewer, "")
+	if removedAccess.Code != http.StatusNotFound {
+		t.Fatalf("removed member still has access: status=%d", removedAccess.Code)
+	}
+	if addedAgain := callAPI(handler, http.MethodPost, membersPath, owner, apiJSON(t, map[string]string{"email": "viewer@example.com", "role": "viewer"})); addedAgain.Code != http.StatusCreated {
+		t.Fatalf("re-add member status=%d body=%s", addedAgain.Code, addedAgain.Body.String())
+	}
 	createdTask := callAPI(handler, http.MethodPost, projectPath+"/tasks", owner, apiJSON(t, map[string]string{"title": "Review concurrency", "priority": "high"}))
 	if createdTask.Code != http.StatusCreated {
 		t.Fatalf("create task status=%d body=%s", createdTask.Code, createdTask.Body.String())

@@ -13,11 +13,19 @@ import (
 )
 
 type v1Server struct {
-	db    *sql.DB
-	tasks projectTaskRepository
+	db       *sql.DB
+	authRepo authRepository
+	projects projectRepository
+	tasks    projectTaskRepository
 }
 
 func (s *v1Server) routes() http.Handler {
+	if s.authRepo == nil {
+		s.authRepo = sqliteAuthRepository{db: s.db}
+	}
+	if s.projects == nil {
+		s.projects = sqliteProjectRepository{db: s.db}
+	}
 	if s.tasks == nil {
 		s.tasks = sqliteProjectTaskRepository{db: s.db}
 	}
@@ -28,7 +36,9 @@ func (s *v1Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/me", s.auth(s.me))
 	mux.HandleFunc("GET /api/v1/projects", s.auth(s.listProjects))
 	mux.HandleFunc("POST /api/v1/projects", s.auth(s.createProject))
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/members", s.auth(s.listMembers))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/members", s.auth(s.addMember))
+	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/members/{userID}", s.auth(s.removeMember))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks", s.auth(s.listTasks))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks", s.auth(s.createTask))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectID}/tasks/{taskID}", s.auth(s.updateTask))
@@ -43,8 +53,7 @@ func (s *v1Server) auth(next func(http.ResponseWriter, *http.Request, identity))
 			writeJSON(w, 401, map[string]string{"error": "bearer token required"})
 			return
 		}
-		var user identity
-		err := s.db.QueryRowContext(r.Context(), "SELECT u.id,u.email,u.name FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?", tokenDigest(parts[1]), time.Now().UTC().Format(time.RFC3339Nano)).Scan(&user.ID, &user.Email, &user.Name)
+		user, err := s.authRepo.UserForSession(r.Context(), tokenDigest(parts[1]), time.Now())
 		if err != nil {
 			writeJSON(w, 401, map[string]string{"error": "invalid or expired session"})
 			return
@@ -72,13 +81,16 @@ func (s *v1Server) register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": "could not secure password"})
 		return
 	}
-	res, err := s.db.ExecContext(r.Context(), "INSERT INTO users(email,name,password_hash) VALUES(?,?,?)", email, name, hash)
-	if err != nil {
+	user, err := s.authRepo.CreateUser(r.Context(), email, name, hash)
+	if errors.Is(err, errEmailAlreadyRegistered) {
 		writeJSON(w, 409, map[string]string{"error": "email is already registered"})
 		return
 	}
-	id, _ := res.LastInsertId()
-	writeJSON(w, 201, identity{ID: id, Email: email, Name: name})
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 201, user)
 }
 func (s *v1Server) login(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -89,9 +101,7 @@ func (s *v1Server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	var user identity
-	var hash string
-	err := s.db.QueryRowContext(r.Context(), "SELECT id,email,name,password_hash FROM users WHERE email=?", strings.TrimSpace(strings.ToLower(in.Email))).Scan(&user.ID, &user.Email, &user.Name, &hash)
+	user, hash, err := s.authRepo.AccountByEmail(r.Context(), strings.TrimSpace(strings.ToLower(in.Email)))
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil {
 		writeJSON(w, 401, map[string]string{"error": "invalid email or password"})
 		return
@@ -101,36 +111,25 @@ func (s *v1Server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": "could not create session"})
 		return
 	}
-	expires := time.Now().UTC().Add(sessionLifetime).Format(time.RFC3339Nano)
-	if _, err := s.db.ExecContext(r.Context(), "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)", digest, user.ID, expires); err != nil {
+	expires := time.Now().UTC().Add(sessionLifetime)
+	if err := s.authRepo.CreateSession(r.Context(), user.ID, digest, expires); err != nil {
 		writeJSON(w, 500, map[string]string{"error": "could not create session"})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"token": token, "token_type": "Bearer", "expires_at": expires, "user": user})
+	writeJSON(w, 200, map[string]any{"token": token, "token_type": "Bearer", "expires_at": expires.Format(time.RFC3339Nano), "user": user})
 }
 func (s *v1Server) logout(w http.ResponseWriter, r *http.Request, _ identity) {
 	parts := strings.Fields(r.Header.Get("Authorization"))
-	_, _ = s.db.ExecContext(r.Context(), "DELETE FROM sessions WHERE token_hash=?", tokenDigest(parts[1]))
+	if err := s.authRepo.RevokeSession(r.Context(), tokenDigest(parts[1])); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "could not revoke session"})
+		return
+	}
 	w.WriteHeader(204)
 }
 func (s *v1Server) me(w http.ResponseWriter, _ *http.Request, user identity) { writeJSON(w, 200, user) }
 func (s *v1Server) listProjects(w http.ResponseWriter, r *http.Request, user identity) {
-	rows, err := s.db.QueryContext(r.Context(), "SELECT p.id,p.name,m.role,p.created_at FROM projects p JOIN project_members m ON m.project_id=p.id WHERE m.user_id=? ORDER BY p.id", user.ID)
+	items, err := s.projects.ListForUser(r.Context(), user.ID)
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "database error"})
-		return
-	}
-	defer rows.Close()
-	items := make([]project, 0)
-	for rows.Next() {
-		var p project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Role, &p.CreatedAt); err != nil {
-			writeJSON(w, 500, map[string]string{"error": "database error"})
-			return
-		}
-		items = append(items, p)
-	}
-	if rows.Err() != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
@@ -149,29 +148,11 @@ func (s *v1Server) createProject(w http.ResponseWriter, r *http.Request, user id
 		writeJSON(w, 400, map[string]string{"error": "project name must contain 1 to 120 bytes"})
 		return
 	}
-	tx, err := s.db.BeginTx(r.Context(), nil)
+	p, err := s.projects.Create(r.Context(), user.ID, in.Name)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
-	defer tx.Rollback()
-	res, err := tx.ExecContext(r.Context(), "INSERT INTO projects(name,owner_id) VALUES(?,?)", in.Name, user.ID)
-	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "database error"})
-		return
-	}
-	id, _ := res.LastInsertId()
-	if _, err = tx.ExecContext(r.Context(), "INSERT INTO project_members(project_id,user_id,role) VALUES(?,?,'owner')", id, user.ID); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "database error"})
-		return
-	}
-	if err = tx.Commit(); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "database error"})
-		return
-	}
-	var p project
-	_ = s.db.QueryRowContext(r.Context(), "SELECT id,name,created_at FROM projects WHERE id=?", id).Scan(&p.ID, &p.Name, &p.CreatedAt)
-	p.Role = "owner"
 	writeJSON(w, 201, p)
 }
 func parseProjectID(r *http.Request) (int64, bool) {
@@ -179,9 +160,7 @@ func parseProjectID(r *http.Request) (int64, bool) {
 	return id, err == nil && id > 0
 }
 func (s *v1Server) role(ctx context.Context, projectID, userID int64) (string, error) {
-	var role string
-	err := s.db.QueryRowContext(ctx, "SELECT role FROM project_members WHERE project_id=? AND user_id=?", projectID, userID).Scan(&role)
-	return role, err
+	return s.projects.Role(ctx, projectID, userID)
 }
 func (s *v1Server) addMember(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := parseProjectID(r)
@@ -207,8 +186,7 @@ func (s *v1Server) addMember(w http.ResponseWriter, r *http.Request, user identi
 		writeJSON(w, 400, map[string]string{"error": "role must be editor or viewer"})
 		return
 	}
-	var target identity
-	err = s.db.QueryRowContext(r.Context(), "SELECT id,email,name FROM users WHERE email=?", in.Email).Scan(&target.ID, &target.Email, &target.Name)
+	target, err := s.projects.UserByEmail(r.Context(), in.Email)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "user not found"})
 		return
@@ -217,12 +195,60 @@ func (s *v1Server) addMember(w http.ResponseWriter, r *http.Request, user identi
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
-	if _, err = s.db.ExecContext(r.Context(), "INSERT INTO project_members(project_id,user_id,role) VALUES(?,?,?)", pid, target.ID, in.Role); err != nil {
+	if err := s.projects.AddMember(r.Context(), pid, target.ID, in.Role); errors.Is(err, errMemberAlreadyAdded) {
 		writeJSON(w, 409, map[string]string{"error": "user is already a project member"})
+		return
+	} else if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
 	writeJSON(w, 201, map[string]any{"user": target, "role": in.Role})
 }
+func (s *v1Server) listMembers(w http.ResponseWriter, r *http.Request, user identity) {
+	projectID, ok := s.authorize(w, r, user, false)
+	if !ok {
+		return
+	}
+	items, err := s.projects.ListMembers(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 200, items)
+}
+
+func (s *v1Server) removeMember(w http.ResponseWriter, r *http.Request, user identity) {
+	projectID, ok := parseProjectID(r)
+	if !ok {
+		writeJSON(w, 400, map[string]string{"error": "invalid project id"})
+		return
+	}
+	role, err := s.role(r.Context(), projectID, user.ID)
+	if err != nil || role != "owner" {
+		writeJSON(w, 404, map[string]string{"error": "project not found"})
+		return
+	}
+	memberID, err := strconv.ParseInt(r.PathValue("userID"), 10, 64)
+	if err != nil || memberID < 1 {
+		writeJSON(w, 400, map[string]string{"error": "invalid user id"})
+		return
+	}
+	removed, err := s.projects.RemoveMember(r.Context(), projectID, memberID)
+	if errors.Is(err, errProjectOwnerProtected) {
+		writeJSON(w, 409, map[string]string{"error": "project owner cannot be removed"})
+		return
+	}
+	if errors.Is(err, sql.ErrNoRows) || !removed && err == nil {
+		writeJSON(w, 404, map[string]string{"error": "project member not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	w.WriteHeader(204)
+}
+
 func (s *v1Server) authorize(w http.ResponseWriter, r *http.Request, user identity, write bool) (int64, bool) {
 	pid, ok := parseProjectID(r)
 	if !ok {

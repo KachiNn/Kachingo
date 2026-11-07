@@ -39,7 +39,9 @@ go run .
 | `POST` | `/api/v1/auth/logout` | 撤销当前 session |
 | `GET` | `/api/v1/me` | 获取当前用户 |
 | `GET` / `POST` | `/api/v1/projects` | 列出已加入项目 / 创建项目 |
+| `GET` | `/api/v1/projects/{projectID}/members` | 列出项目成员及角色 |
 | `POST` | `/api/v1/projects/{projectID}/members` | owner 按邮箱添加 editor 或 viewer |
+| `DELETE` | `/api/v1/projects/{projectID}/members/{userID}` | owner 移除成员；项目 owner 不可移除 |
 | `GET` / `POST` | `/api/v1/projects/{projectID}/tasks` | 列出 / 创建项目任务 |
 | `PATCH` / `DELETE` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 更新 / 删除项目任务 |
 
@@ -68,9 +70,11 @@ curl -X POST http://localhost:8080/api/v1/projects/1/tasks \
 ## 代码结构
 
 - `main.go`：旧接口、HTTP 服务启动和关闭
-- `server_v1.go`：新版路由、认证校验、业务请求处理
+- `server_v1.go`：新版路由、HTTP 参数校验与响应映射
+- `auth_project_repository.go`、`project_task_repository.go`：认证、项目成员和任务的数据访问接口及 SQLite 实现
 - `database.go`：SQLite 初始化、migration 执行和响应模型
 - `auth.go`：密码校验及 session token 生成
+- `http_middleware.go`：request ID 和 HTTP 访问日志
 - `migrations/`：数据库结构变更脚本，按序号执行
 - `*_test.go`：旧接口测试和新版 HTTP/SQLite 集成测试
 

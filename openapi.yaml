@@ -77,6 +77,13 @@ paths:
         '201': { description: Project created; creator is owner }
         '400': { description: Invalid input }
   /api/v1/projects/{projectID}/members:
+    get:
+      summary: List project members
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Project member list }
+        '404': { description: Project not found }
     post:
       summary: Add a project member (owner only)
       parameters:
@@ -94,6 +101,16 @@ paths:
       responses:
         '201': { description: Member added }
         '404': { description: Project or user not found }
+  /api/v1/projects/{projectID}/members/{userID}:
+    delete:
+      summary: Remove a member (owner only; project owner cannot be removed)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: userID, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Member removed }
+        '404': { description: Project or member not found }
+        '409': { description: Project owner is protected }
   /api/v1/projects/{projectID}/tasks:
     get:
       summary: List project tasks

@@ -375,7 +375,7 @@ func main() {
 	mux.Handle("/api/v1/", (&v1Server{db: db}).routes())
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           requestLogging(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
