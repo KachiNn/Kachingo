@@ -164,6 +164,37 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 		t.Fatalf("unexpected page: %+v", page)
 	}
 	taskPath := projectPath + "/tasks/" + strconv.FormatInt(task.ID, 10)
+	commentsPath := taskPath + "/comments"
+	if got := callAPI(handler, http.MethodGet, commentsPath, viewer, ""); got.Code != http.StatusOK || got.Body.String() != "[]\n" {
+		t.Fatalf("empty comments status=%d body=%s", got.Code, got.Body.String())
+	}
+	if got := callAPI(handler, http.MethodPost, commentsPath, viewer, apiJSON(t, map[string]string{"body": "viewer cannot write"})); got.Code != http.StatusForbidden {
+		t.Fatalf("viewer comment status=%d", got.Code)
+	}
+	if got := callAPI(handler, http.MethodPost, commentsPath, owner, apiJSON(t, map[string]string{"body": "   "})); got.Code != http.StatusBadRequest {
+		t.Fatalf("empty comment status=%d", got.Code)
+	}
+	longComment := strings.Repeat("x", 5001)
+	if got := callAPI(handler, http.MethodPost, commentsPath, owner, apiJSON(t, map[string]string{"body": longComment})); got.Code != http.StatusBadRequest {
+		t.Fatalf("long comment status=%d", got.Code)
+	}
+	firstComment := callAPI(handler, http.MethodPost, commentsPath, owner, apiJSON(t, map[string]string{"body": "  Need a race test  "}))
+	if firstComment.Code != http.StatusCreated {
+		t.Fatalf("comment create status=%d body=%s", firstComment.Code, firstComment.Body.String())
+	}
+	secondComment := callAPI(handler, http.MethodPost, commentsPath, owner, apiJSON(t, map[string]string{"body": "Discuss lock ordering"}))
+	if secondComment.Code != http.StatusCreated {
+		t.Fatalf("second comment status=%d", secondComment.Code)
+	}
+	var comments []taskComment
+	commentList := callAPI(handler, http.MethodGet, commentsPath, viewer, "")
+	decodeResponse(t, commentList, &comments)
+	if len(comments) != 2 || comments[0].Body != "Need a race test" || comments[0].AuthorID == nil || comments[0].AuthorName == nil || comments[1].Body != "Discuss lock ordering" {
+		t.Fatalf("unexpected comments: %+v", comments)
+	}
+	if got := callAPI(handler, http.MethodGet, commentsPath, outsider, ""); got.Code != http.StatusNotFound {
+		t.Fatalf("outsider comments status=%d", got.Code)
+	}
 	missingVersion := callAPI(handler, http.MethodPatch, taskPath, owner, apiJSON(t, map[string]string{"status": "done"}))
 	if missingVersion.Code != http.StatusPreconditionRequired {
 		t.Fatalf("missing version status=%d body=%s", missingVersion.Code, missingVersion.Body.String())
@@ -252,6 +283,16 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	}
 	if afterRemoval.AssigneeID != nil || afterRemoval.Version <= current.Version {
 		t.Fatalf("removed assignee was retained or version did not advance: %+v", afterRemoval)
+	}
+	if deleted := callAPI(handler, http.MethodDelete, taskPath, owner, ""); deleted.Code != http.StatusNoContent {
+		t.Fatalf("delete task status=%d", deleted.Code)
+	}
+	var remainingComments int
+	if err := db.QueryRow("SELECT COUNT(*) FROM task_comments WHERE task_id=?", task.ID).Scan(&remainingComments); err != nil {
+		t.Fatal(err)
+	}
+	if remainingComments != 0 {
+		t.Fatalf("task deletion retained %d comments", remainingComments)
 	}
 	loggedOut := callAPI(handler, http.MethodPost, "/api/v1/auth/logout", viewer, "")
 	if loggedOut.Code != http.StatusNoContent {

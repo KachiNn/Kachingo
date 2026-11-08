@@ -133,6 +133,15 @@ type taskEvent struct {
 	CreatedAt  string  `json:"created_at"`
 }
 
+type taskComment struct {
+	ID         int64   `json:"id"`
+	TaskID     int64   `json:"task_id"`
+	AuthorID   *int64  `json:"author_id"`
+	AuthorName *string `json:"author_name"`
+	Body       string  `json:"body"`
+	CreatedAt  string  `json:"created_at"`
+}
+
 type projectTaskPage struct {
 	Items  []projectTask `json:"items"`
 	Total  int           `json:"total"`

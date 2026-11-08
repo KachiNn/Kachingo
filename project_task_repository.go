@@ -18,6 +18,8 @@ type projectTaskRepository interface {
 	Get(context.Context, int64, int64) (projectTask, error)
 	Update(context.Context, projectTask, int64, int64, string) (projectTask, error)
 	Events(context.Context, int64, int64) ([]taskEvent, error)
+	ListComments(context.Context, int64, int64) ([]taskComment, error)
+	CreateComment(context.Context, int64, int64, int64, string) (taskComment, error)
 	Delete(context.Context, int64, int64) (bool, error)
 }
 type sqliteProjectTaskRepository struct{ db *sql.DB }
@@ -137,6 +139,40 @@ func (repo sqliteProjectTaskRepository) Events(ctx context.Context, projectID, t
 		return nil, err
 	}
 	return events, nil
+}
+
+func (repo sqliteProjectTaskRepository) ListComments(ctx context.Context, projectID, taskID int64) ([]taskComment, error) {
+	rows, err := repo.db.QueryContext(ctx, "SELECT c.id,c.task_id,c.author_id,u.name,c.body,c.created_at FROM task_comments c LEFT JOIN users u ON u.id=c.author_id WHERE c.project_id=? AND c.task_id=? ORDER BY c.id", projectID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	comments := make([]taskComment, 0)
+	for rows.Next() {
+		var comment taskComment
+		if err := rows.Scan(&comment.ID, &comment.TaskID, &comment.AuthorID, &comment.AuthorName, &comment.Body, &comment.CreatedAt); err != nil {
+			return nil, err
+		}
+		comments = append(comments, comment)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return comments, nil
+}
+
+func (repo sqliteProjectTaskRepository) CreateComment(ctx context.Context, projectID, taskID, authorID int64, body string) (taskComment, error) {
+	result, err := repo.db.ExecContext(ctx, "INSERT INTO task_comments(project_id,task_id,author_id,body) VALUES(?,?,?,?)", projectID, taskID, authorID, body)
+	if err != nil {
+		return taskComment{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return taskComment{}, err
+	}
+	var comment taskComment
+	err = repo.db.QueryRowContext(ctx, "SELECT c.id,c.task_id,c.author_id,u.name,c.body,c.created_at FROM task_comments c LEFT JOIN users u ON u.id=c.author_id WHERE c.id=?", id).Scan(&comment.ID, &comment.TaskID, &comment.AuthorID, &comment.AuthorName, &comment.Body, &comment.CreatedAt)
+	return comment, err
 }
 
 func (repo sqliteProjectTaskRepository) Delete(ctx context.Context, projectID, taskID int64) (bool, error) {

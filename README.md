@@ -45,6 +45,7 @@ go run .
 | `GET` / `POST` | `/api/v1/projects/{projectID}/tasks` | 列出 / 创建项目任务 |
 | `PATCH` / `DELETE` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 更新 / 删除项目任务 |
 | `GET` | `/api/v1/projects/{projectID}/tasks/{taskID}/events` | 项目成员查看任务创建与状态流转历史 |
+| `GET` / `POST` | `/api/v1/projects/{projectID}/tasks/{taskID}/comments` | 项目成员查看评论 / owner 和 editor 发布评论 |
 
 注册请求示例：
 
@@ -66,7 +67,7 @@ curl -X POST http://localhost:8080/api/v1/projects/1/tasks \
   -d '{"title":"Review Go concurrency","priority":"high"}'
 ```
 
-任务状态为 `open`、`in_progress` 或 `done`；优先级为 `low`、`normal` 或 `high`。可选负责人必须是项目成员，截止日期使用 `YYYY-MM-DD`。任务列表支持 `status`、`q`、`assignee_id`、`unassigned=true`、`overdue=true`、`limit`（1-100）和 `offset`。任务响应包含 `version`；更新时必须提交刚读取到的版本，成功后版本递增，过期版本返回 409，缺少版本返回 428。PATCH 中 `assignee_id: null` 或 `due_date: null` 可清除对应字段；移除成员会自动清除其项目任务指派。任务创建和状态变化会原子记录操作者与状态前后值，活动历史按发生顺序读取。没有项目成员关系时，项目返回 404；viewer 写入返回 403。
+任务状态为 `open`、`in_progress` 或 `done`；优先级为 `low`、`normal` 或 `high`。可选负责人必须是项目成员，截止日期使用 `YYYY-MM-DD`。任务列表支持 `status`、`q`、`assignee_id`、`unassigned=true`、`overdue=true`、`limit`（1-100）和 `offset`。任务响应包含 `version`；更新时必须提交刚读取到的版本，成功后版本递增，过期版本返回 409，缺少版本返回 428。PATCH 中 `assignee_id: null` 或 `due_date: null` 可清除对应字段；移除成员会自动清除其项目任务指派。任务创建和状态变化会原子记录操作者与状态前后值，活动历史按发生顺序读取。任务评论限制为 1-5000 个 Unicode 字符，按创建顺序返回；viewer 只读，删除任务时评论一并清理。没有项目成员关系时，项目返回 404；viewer 写入返回 403。
 
 ## 代码结构
 

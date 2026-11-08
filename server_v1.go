@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -75,6 +76,8 @@ func (s *v1Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks", s.auth(s.listTasks))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks", s.auth(s.createTask))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks/{taskID}/events", s.auth(s.listTaskEvents))
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks/{taskID}/comments", s.auth(s.listTaskComments))
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks/{taskID}/comments", s.auth(s.createTaskComment))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectID}/tasks/{taskID}", s.auth(s.updateTask))
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/tasks/{taskID}", s.auth(s.deleteTask))
 	return mux
@@ -506,6 +509,68 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 	}
 	writeJSON(w, 200, updated)
 }
+func (s *v1Server) taskIDForRequest(w http.ResponseWriter, r *http.Request, projectID int64) (int64, bool) {
+	taskID, err := strconv.ParseInt(r.PathValue("taskID"), 10, 64)
+	if err != nil || taskID < 1 {
+		writeJSON(w, 400, map[string]string{"error": "invalid task id"})
+		return 0, false
+	}
+	if _, err := s.tasks.Get(r.Context(), projectID, taskID); errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "task not found"})
+		return 0, false
+	} else if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return 0, false
+	}
+	return taskID, true
+}
+
+func (s *v1Server) listTaskComments(w http.ResponseWriter, r *http.Request, user identity) {
+	projectID, ok := s.authorize(w, r, user, false)
+	if !ok {
+		return
+	}
+	taskID, ok := s.taskIDForRequest(w, r, projectID)
+	if !ok {
+		return
+	}
+	comments, err := s.tasks.ListComments(r.Context(), projectID, taskID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 200, comments)
+}
+
+func (s *v1Server) createTaskComment(w http.ResponseWriter, r *http.Request, user identity) {
+	projectID, ok := s.authorize(w, r, user, true)
+	if !ok {
+		return
+	}
+	taskID, ok := s.taskIDForRequest(w, r, projectID)
+	if !ok {
+		return
+	}
+	var input struct {
+		Body string `json:"body"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	body := strings.TrimSpace(input.Body)
+	if body == "" || utf8.RuneCountInString(body) > 5000 {
+		writeJSON(w, 400, map[string]string{"error": "comment must contain 1 to 5000 characters"})
+		return
+	}
+	comment, err := s.tasks.CreateComment(r.Context(), projectID, taskID, user.ID, body)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 201, comment)
+}
+
 func (s *v1Server) listTaskEvents(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := s.authorize(w, r, user, false)
 	if !ok {

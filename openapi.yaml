@@ -168,6 +168,34 @@ paths:
       responses:
         '200': { description: Ordered task event history }
         '404': { description: Project or task not found }
+  /api/v1/projects/{projectID}/tasks/{taskID}/comments:
+    get:
+      summary: List task comments (project members)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: taskID, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Comments in creation order }
+        '404': { description: Project or task not found }
+    post:
+      summary: Add a task comment (owner/editor)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: taskID, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 5000 }
+      responses:
+        '201': { description: Comment created }
+        '400': { description: Empty or oversized comment }
+        '403': { description: Viewer cannot write }
+        '404': { description: Project or task not found }
   /api/v1/projects/{projectID}/tasks/{taskID}:
     patch:
       summary: Update a project task (owner/editor)
