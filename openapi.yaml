@@ -159,6 +159,15 @@ paths:
       responses:
         '201': { description: Task created }
         '403': { description: Viewer cannot write }
+  /api/v1/projects/{projectID}/tasks/{taskID}/events:
+    get:
+      summary: Read task creation and status history (project members)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: taskID, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Ordered task event history }
+        '404': { description: Project or task not found }
   /api/v1/projects/{projectID}/tasks/{taskID}:
     patch:
       summary: Update a project task (owner/editor)

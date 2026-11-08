@@ -123,6 +123,16 @@ type projectTask struct {
 	DueDate     *string `json:"due_date"`
 }
 
+type taskEvent struct {
+	ID         int64   `json:"id"`
+	TaskID     int64   `json:"task_id"`
+	ActorID    *int64  `json:"actor_id"`
+	EventType  string  `json:"event_type"`
+	FromStatus *string `json:"from_status"`
+	ToStatus   string  `json:"to_status"`
+	CreatedAt  string  `json:"created_at"`
+}
+
 type projectTaskPage struct {
 	Items  []projectTask `json:"items"`
 	Total  int           `json:"total"`

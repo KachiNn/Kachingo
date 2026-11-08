@@ -14,9 +14,10 @@ var (
 
 type projectTaskRepository interface {
 	List(context.Context, int64, string, string, int64, bool, bool, int, int) (projectTaskPage, error)
-	Create(context.Context, int64, string, string, string, *int64, *string) (projectTask, error)
+	Create(context.Context, int64, int64, string, string, string, *int64, *string) (projectTask, error)
 	Get(context.Context, int64, int64) (projectTask, error)
-	Update(context.Context, projectTask, int64) (projectTask, error)
+	Update(context.Context, projectTask, int64, int64, string) (projectTask, error)
+	Events(context.Context, int64, int64) ([]taskEvent, error)
 	Delete(context.Context, int64, int64) (bool, error)
 }
 type sqliteProjectTaskRepository struct{ db *sql.DB }
@@ -48,7 +49,7 @@ func (repo sqliteProjectTaskRepository) List(ctx context.Context, projectID int6
 	}
 	return page, nil
 }
-func (repo sqliteProjectTaskRepository) Create(ctx context.Context, projectID int64, title, description, priority string, assigneeID *int64, dueDate *string) (projectTask, error) {
+func (repo sqliteProjectTaskRepository) Create(ctx context.Context, projectID, actorID int64, title, description, priority string, assigneeID *int64, dueDate *string) (projectTask, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
 		return projectTask{}, err
@@ -65,6 +66,9 @@ func (repo sqliteProjectTaskRepository) Create(ctx context.Context, projectID in
 	if err != nil {
 		return projectTask{}, err
 	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO task_events(project_id,task_id,actor_id,event_type,to_status) VALUES(?,?,?,'created','open')", projectID, id, actorID); err != nil {
+		return projectTask{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return projectTask{}, err
 	}
@@ -75,7 +79,7 @@ func (repo sqliteProjectTaskRepository) Get(ctx context.Context, projectID, task
 	err := scanProjectTask(repo.db.QueryRowContext(ctx, "SELECT id,project_id,title,description,status,priority,created_at,updated_at,version,assignee_id,due_date FROM project_tasks WHERE id=? AND project_id=?", taskID, projectID), &task)
 	return task, err
 }
-func (repo sqliteProjectTaskRepository) Update(ctx context.Context, task projectTask, expectedVersion int64) (projectTask, error) {
+func (repo sqliteProjectTaskRepository) Update(ctx context.Context, task projectTask, expectedVersion, actorID int64, previousStatus string) (projectTask, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
 		return projectTask{}, err
@@ -105,11 +109,36 @@ func (repo sqliteProjectTaskRepository) Update(ctx context.Context, task project
 		}
 		return projectTask{}, errTaskVersionConflict
 	}
+	if task.Status != previousStatus {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO task_events(project_id,task_id,actor_id,event_type,from_status,to_status) VALUES(?,?,?,'status_changed',?,?)", task.ProjectID, task.ID, actorID, previousStatus, task.Status); err != nil {
+			return projectTask{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return projectTask{}, err
 	}
 	return repo.Get(ctx, task.ProjectID, task.ID)
 }
+func (repo sqliteProjectTaskRepository) Events(ctx context.Context, projectID, taskID int64) ([]taskEvent, error) {
+	rows, err := repo.db.QueryContext(ctx, "SELECT id,task_id,actor_id,event_type,from_status,to_status,created_at FROM task_events WHERE project_id=? AND task_id=? ORDER BY id", projectID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := make([]taskEvent, 0)
+	for rows.Next() {
+		var event taskEvent
+		if err := rows.Scan(&event.ID, &event.TaskID, &event.ActorID, &event.EventType, &event.FromStatus, &event.ToStatus, &event.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
 func (repo sqliteProjectTaskRepository) Delete(ctx context.Context, projectID, taskID int64) (bool, error) {
 	result, err := repo.db.ExecContext(ctx, "DELETE FROM project_tasks WHERE id=? AND project_id=?", taskID, projectID)
 	if err != nil {

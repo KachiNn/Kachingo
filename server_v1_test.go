@@ -72,6 +72,23 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if passwordHash == "secure-password-123" || !strings.HasPrefix(passwordHash, "$2") {
 		t.Fatal("password was not stored as a bcrypt hash")
 	}
+	var storedTokenDigest string
+	if err := db.QueryRow("SELECT token_hash FROM sessions WHERE user_id=?", 1).Scan(&storedTokenDigest); err != nil {
+		t.Fatal(err)
+	}
+	if storedTokenDigest == owner || len(storedTokenDigest) != 64 {
+		t.Fatal("session token was not stored as a SHA-256 digest")
+	}
+	if duplicate := callAPI(handler, http.MethodPost, "/api/v1/auth/register", "", apiJSON(t, map[string]string{"email": "OWNER@example.com", "name": "Duplicate", "password": "secure-password-123"})); duplicate.Code != http.StatusConflict {
+		t.Fatalf("duplicate email status=%d", duplicate.Code)
+	}
+	wrongPassword := callAPI(handler, http.MethodPost, "/api/v1/auth/login", "", apiJSON(t, map[string]string{"email": "owner@example.com", "password": "wrong-password-000"}))
+	if wrongPassword.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password status=%d", wrongPassword.Code)
+	}
+	if unknownEmail := callAPI(handler, http.MethodPost, "/api/v1/auth/login", "", apiJSON(t, map[string]string{"email": "missing@example.com", "password": "wrong-password-000"})); unknownEmail.Code != http.StatusUnauthorized || unknownEmail.Body.String() != wrongPassword.Body.String() {
+		t.Fatalf("unknown email response differs: status=%d body=%s", unknownEmail.Code, unknownEmail.Body.String())
+	}
 	viewer := registerUser(t, handler, "viewer@example.com")
 	outsider := registerUser(t, handler, "outsider@example.com")
 	if got := callAPI(handler, http.MethodGet, "/api/v1/projects", "", "").Code; got != http.StatusUnauthorized {
@@ -161,6 +178,18 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if current.Version != task.Version+1 {
 		t.Fatalf("updated version=%d, want %d", current.Version, task.Version+1)
 	}
+	eventsResponse := callAPI(handler, http.MethodGet, taskPath+"/events", viewer, "")
+	if eventsResponse.Code != http.StatusOK {
+		t.Fatalf("events status=%d body=%s", eventsResponse.Code, eventsResponse.Body.String())
+	}
+	var events []taskEvent
+	decodeResponse(t, eventsResponse, &events)
+	if len(events) != 2 || events[0].EventType != "created" || events[0].ActorID == nil || events[1].ActorID == nil || *events[0].ActorID != *events[1].ActorID || events[1].EventType != "status_changed" || events[1].FromStatus == nil || *events[1].FromStatus != "open" || events[1].ToStatus != "done" {
+		t.Fatalf("unexpected task history: %+v", events)
+	}
+	if outsiderEvents := callAPI(handler, http.MethodGet, taskPath+"/events", outsider, ""); outsiderEvents.Code != http.StatusNotFound {
+		t.Fatalf("outsider events status=%d", outsiderEvents.Code)
+	}
 	clearFields := callAPI(handler, http.MethodPatch, taskPath, owner, apiJSON(t, map[string]any{"assignee_id": nil, "due_date": nil, "version": current.Version}))
 	if clearFields.Code != http.StatusOK {
 		t.Fatalf("clear fields status=%d body=%s", clearFields.Code, clearFields.Body.String())
@@ -185,6 +214,15 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	isolated := callAPI(handler, http.MethodGet, projectPath+"/tasks", outsider, "")
 	if isolated.Code != http.StatusNotFound {
 		t.Fatalf("outsider status=%d", isolated.Code)
+	}
+	if malformed := callAPI(handler, http.MethodGet, "/api/v1/me", "not-a-real-token", ""); malformed.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid token status=%d", malformed.Code)
+	}
+	if _, err := db.Exec("UPDATE sessions SET expires_at=? WHERE token_hash=?", "2000-01-01T00:00:00Z", tokenDigest(outsider)); err != nil {
+		t.Fatal(err)
+	}
+	if expired := callAPI(handler, http.MethodGet, "/api/v1/me", outsider, ""); expired.Code != http.StatusUnauthorized {
+		t.Fatalf("expired session status=%d", expired.Code)
 	}
 	assignedFilter := callAPI(handler, http.MethodGet, projectPath+"/tasks?assignee_id="+strconv.FormatInt(members[1].User.ID, 10), owner, "")
 	var assignedPage struct {

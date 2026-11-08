@@ -19,8 +19,8 @@ func TestDatabaseMigrationsAreIdempotent(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 {
-		t.Fatalf("applied migrations=%d, want 3", count)
+	if count != 4 {
+		t.Fatalf("applied migrations=%d, want 4", count)
 	}
 	rows, err := db.Query("PRAGMA table_info(project_tasks)")
 	if err != nil {
@@ -49,5 +49,9 @@ func TestDatabaseMigrationsAreIdempotent(t *testing.T) {
 	}
 	if !foundVersion || !foundAssignee || !foundDueDate {
 		t.Fatalf("task migrations missing fields: version=%t assignee=%t due_date=%t", foundVersion, foundAssignee, foundDueDate)
+	}
+	var eventTable string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='task_events'").Scan(&eventTable); err != nil || eventTable != "task_events" {
+		t.Fatalf("task event migration missing: table=%q err=%v", eventTable, err)
 	}
 }

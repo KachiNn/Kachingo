@@ -43,6 +43,8 @@ func validateDueDate(value *string) error {
 	return nil
 }
 
+const dummyBcryptHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+
 type v1Server struct {
 	db       *sql.DB
 	authRepo authRepository
@@ -72,6 +74,7 @@ func (s *v1Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/members/{userID}", s.auth(s.removeMember))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks", s.auth(s.listTasks))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks", s.auth(s.createTask))
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks/{taskID}/events", s.auth(s.listTaskEvents))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectID}/tasks/{taskID}", s.auth(s.updateTask))
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/tasks/{taskID}", s.auth(s.deleteTask))
 	return mux
@@ -133,7 +136,11 @@ func (s *v1Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, hash, err := s.authRepo.AccountByEmail(r.Context(), strings.TrimSpace(strings.ToLower(in.Email)))
-	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil {
+	if err != nil {
+		hash = dummyBcryptHash
+	}
+	passwordErr := bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password))
+	if err != nil || passwordErr != nil {
 		writeJSON(w, 401, map[string]string{"error": "invalid email or password"})
 		return
 	}
@@ -390,7 +397,7 @@ func (s *v1Server) createTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	task, err := s.tasks.Create(r.Context(), pid, in.Title, in.Description, in.Priority, in.AssigneeID, in.DueDate)
+	task, err := s.tasks.Create(r.Context(), pid, user.ID, in.Title, in.Description, in.Priority, in.AssigneeID, in.DueDate)
 	if errors.Is(err, errAssigneeNotProjectMember) {
 		writeJSON(w, 400, map[string]string{"error": "assignee must be a project member"})
 		return
@@ -441,6 +448,7 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
+	previousStatus := t.Status
 	if in.Title != nil {
 		t.Title = strings.TrimSpace(*in.Title)
 		if t.Title == "" || len(t.Title) > 200 {
@@ -479,7 +487,7 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	updated, err := s.tasks.Update(r.Context(), t, *in.Version)
+	updated, err := s.tasks.Update(r.Context(), t, *in.Version, user.ID, previousStatus)
 	if errors.Is(err, errAssigneeNotProjectMember) {
 		writeJSON(w, 400, map[string]string{"error": "assignee must be a project member"})
 		return
@@ -498,6 +506,31 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 	}
 	writeJSON(w, 200, updated)
 }
+func (s *v1Server) listTaskEvents(w http.ResponseWriter, r *http.Request, user identity) {
+	pid, ok := s.authorize(w, r, user, false)
+	if !ok {
+		return
+	}
+	tid, err := strconv.ParseInt(r.PathValue("taskID"), 10, 64)
+	if err != nil || tid < 1 {
+		writeJSON(w, 400, map[string]string{"error": "invalid task id"})
+		return
+	}
+	if _, err := s.tasks.Get(r.Context(), pid, tid); errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "task not found"})
+		return
+	} else if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	events, err := s.tasks.Events(r.Context(), pid, tid)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 200, events)
+}
+
 func (s *v1Server) deleteTask(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := s.authorize(w, r, user, true)
 	if !ok {
