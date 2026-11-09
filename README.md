@@ -1,5 +1,7 @@
 # Kachingo
 
+[![CI](https://github.com/KachiNn/Kachingo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KachiNn/Kachingo/actions/workflows/ci.yml)
+
 Kachingo 是一个用 Go 构建的轻量级项目任务协作服务。它提供用户注册、会话认证、项目成员角色和项目内任务管理，适合本地运行、阅读代码和作为后端工程实践项目。
 
 ## 功能

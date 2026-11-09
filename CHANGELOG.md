@@ -1,5 +1,9 @@
 # 变更记录
 
+## 2026-11-08
+
+- 为 README 增加 GitHub Actions CI 状态徽章，方便从仓库首页追踪 main 分支验证结果。
+
 ## 2026-11-07
 
 - 抽出任务、认证/session、项目成员 SQLite repositories；任务版本乐观锁拒绝缺失版本和过期更新。
