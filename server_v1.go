@@ -75,6 +75,7 @@ func (s *v1Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/members/{userID}", s.auth(s.removeMember))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks", s.auth(s.listTasks))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks", s.auth(s.createTask))
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks/{taskID}", s.auth(s.getTask))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks/{taskID}/events", s.auth(s.listTaskEvents))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks/{taskID}/comments", s.auth(s.listTaskComments))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks/{taskID}/comments", s.auth(s.createTaskComment))
@@ -411,6 +412,23 @@ func (s *v1Server) createTask(w http.ResponseWriter, r *http.Request, user ident
 	}
 	writeJSON(w, 201, task)
 }
+func (s *v1Server) getTask(w http.ResponseWriter, r *http.Request, user identity) {
+	projectID, ok := s.authorize(w, r, user, false)
+	if !ok {
+		return
+	}
+	taskID, ok := s.taskIDForRequest(w, r, projectID)
+	if !ok {
+		return
+	}
+	task, err := s.tasks.Get(r.Context(), projectID, taskID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 200, task)
+}
+
 func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := s.authorize(w, r, user, true)
 	if !ok {

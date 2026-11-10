@@ -197,6 +197,14 @@ paths:
         '403': { description: Viewer cannot write }
         '404': { description: Project or task not found }
   /api/v1/projects/{projectID}/tasks/{taskID}:
+    get:
+      summary: Get one project task (project members)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: taskID, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Current task including its optimistic-lock version }
+        '404': { description: Project or task not found }
     patch:
       summary: Update a project task (owner/editor)
       parameters:

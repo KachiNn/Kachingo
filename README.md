@@ -45,6 +45,7 @@ go run .
 | `POST` | `/api/v1/projects/{projectID}/members` | owner 按邮箱添加 editor 或 viewer |
 | `DELETE` | `/api/v1/projects/{projectID}/members/{userID}` | owner 移除成员；项目 owner 不可移除 |
 | `GET` / `POST` | `/api/v1/projects/{projectID}/tasks` | 列出 / 创建项目任务 |
+| `GET` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 获取单个项目任务及当前 `version` |
 | `PATCH` / `DELETE` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 更新 / 删除项目任务 |
 | `GET` | `/api/v1/projects/{projectID}/tasks/{taskID}/events` | 项目成员查看任务创建与状态流转历史 |
 | `GET` / `POST` | `/api/v1/projects/{projectID}/tasks/{taskID}/comments` | 项目成员查看评论 / owner 和 editor 发布评论 |

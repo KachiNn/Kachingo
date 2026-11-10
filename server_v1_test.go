@@ -164,6 +164,18 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 		t.Fatalf("unexpected page: %+v", page)
 	}
 	taskPath := projectPath + "/tasks/" + strconv.FormatInt(task.ID, 10)
+	fetched := callAPI(handler, http.MethodGet, taskPath, viewer, "")
+	if fetched.Code != http.StatusOK {
+		t.Fatalf("get task status=%d body=%s", fetched.Code, fetched.Body.String())
+	}
+	var fetchedTask projectTask
+	decodeResponse(t, fetched, &fetchedTask)
+	if fetchedTask.ID != task.ID || fetchedTask.Version != task.Version {
+		t.Fatalf("unexpected fetched task: %+v", fetchedTask)
+	}
+	if outsiderTask := callAPI(handler, http.MethodGet, taskPath, outsider, ""); outsiderTask.Code != http.StatusNotFound {
+		t.Fatalf("outsider task status=%d", outsiderTask.Code)
+	}
 	commentsPath := taskPath + "/comments"
 	if got := callAPI(handler, http.MethodGet, commentsPath, viewer, ""); got.Code != http.StatusOK || got.Body.String() != "[]\n" {
 		t.Fatalf("empty comments status=%d body=%s", got.Code, got.Body.String())
