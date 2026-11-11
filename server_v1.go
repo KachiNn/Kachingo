@@ -70,6 +70,7 @@ func (s *v1Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/me", s.auth(s.me))
 	mux.HandleFunc("GET /api/v1/projects", s.auth(s.listProjects))
 	mux.HandleFunc("POST /api/v1/projects", s.auth(s.createProject))
+	mux.HandleFunc("PATCH /api/v1/projects/{projectID}", s.auth(s.updateProject))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/members", s.auth(s.listMembers))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/members", s.auth(s.addMember))
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/members/{userID}", s.auth(s.removeMember))
@@ -197,6 +198,41 @@ func (s *v1Server) createProject(w http.ResponseWriter, r *http.Request, user id
 	}
 	writeJSON(w, 201, p)
 }
+func (s *v1Server) updateProject(w http.ResponseWriter, r *http.Request, user identity) {
+	projectID, ok := parseProjectID(r)
+	if !ok {
+		writeJSON(w, 400, map[string]string{"error": "invalid project id"})
+		return
+	}
+	role, err := s.role(r.Context(), projectID, user.ID)
+	if err != nil || role != "owner" {
+		writeJSON(w, 404, map[string]string{"error": "project not found"})
+		return
+	}
+	var in struct {
+		Name string `json:"name"`
+	}
+	if decodeJSON(w, r, &in) != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" || len(in.Name) > 120 {
+		writeJSON(w, 400, map[string]string{"error": "project name must contain 1 to 120 bytes"})
+		return
+	}
+	project, err := s.projects.UpdateName(r.Context(), projectID, user.ID, in.Name)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "project not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 200, project)
+}
+
 func parseProjectID(r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("projectID"), 10, 64)
 	return id, err == nil && id > 0

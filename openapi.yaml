@@ -89,6 +89,24 @@ paths:
       responses:
         '201': { description: Project created; creator is owner }
         '400': { description: Invalid input }
+  /api/v1/projects/{projectID}:
+    patch:
+      summary: Rename a project (owner only)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        '200': { description: Project renamed }
+        '400': { description: Invalid project name }
+        '404': { description: Project not found or caller is not owner }
   /api/v1/projects/{projectID}/members:
     get:
       summary: List project members

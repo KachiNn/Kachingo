@@ -101,6 +101,18 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	var p project
 	decodeResponse(t, created, &p)
 	projectPath := "/api/v1/projects/" + strconv.FormatInt(p.ID, 10)
+	renamed := callAPI(handler, http.MethodPatch, projectPath, owner, apiJSON(t, map[string]string{"name": "Go Interview Prep"}))
+	if renamed.Code != http.StatusOK {
+		t.Fatalf("rename project status=%d body=%s", renamed.Code, renamed.Body.String())
+	}
+	var renamedProject project
+	decodeResponse(t, renamed, &renamedProject)
+	if renamedProject.Name != "Go Interview Prep" || renamedProject.Role != "owner" {
+		t.Fatalf("unexpected renamed project: %+v", renamedProject)
+	}
+	if viewerRename := callAPI(handler, http.MethodPatch, projectPath, viewer, apiJSON(t, map[string]string{"name": "forbidden"})); viewerRename.Code != http.StatusNotFound {
+		t.Fatalf("viewer rename status=%d", viewerRename.Code)
+	}
 	added := callAPI(handler, http.MethodPost, projectPath+"/members", owner, apiJSON(t, map[string]string{"email": "viewer@example.com", "role": "viewer"}))
 	if added.Code != http.StatusCreated {
 		t.Fatalf("add member status=%d body=%s", added.Code, added.Body.String())

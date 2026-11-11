@@ -24,6 +24,7 @@ type authRepository interface {
 type projectRepository interface {
 	ListForUser(context.Context, int64) ([]project, error)
 	Create(context.Context, int64, string) (project, error)
+	UpdateName(context.Context, int64, int64, string) (project, error)
 	Role(context.Context, int64, int64) (string, error)
 	UserByEmail(context.Context, string) (identity, error)
 	AddMember(context.Context, int64, int64, string) error
@@ -114,6 +115,24 @@ func (repo sqliteProjectRepository) Create(ctx context.Context, userID int64, na
 	p.Role = "owner"
 	return p, err
 }
+func (repo sqliteProjectRepository) UpdateName(ctx context.Context, projectID, userID int64, name string) (project, error) {
+	result, err := repo.db.ExecContext(ctx, "UPDATE projects SET name=? WHERE id=? AND owner_id=?", name, projectID, userID)
+	if err != nil {
+		return project{}, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return project{}, err
+	}
+	if count == 0 {
+		return project{}, sql.ErrNoRows
+	}
+	var p project
+	err = repo.db.QueryRowContext(ctx, "SELECT id,name,created_at FROM projects WHERE id=?", projectID).Scan(&p.ID, &p.Name, &p.CreatedAt)
+	p.Role = "owner"
+	return p, err
+}
+
 func (repo sqliteProjectRepository) Role(ctx context.Context, projectID, userID int64) (string, error) {
 	var role string
 	err := repo.db.QueryRowContext(ctx, "SELECT role FROM project_members WHERE project_id=? AND user_id=?", projectID, userID).Scan(&role)

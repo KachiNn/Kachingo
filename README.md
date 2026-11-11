@@ -41,6 +41,7 @@ go run .
 | `POST` | `/api/v1/auth/logout` | 撤销当前 session |
 | `GET` | `/api/v1/me` | 获取当前用户 |
 | `GET` / `POST` | `/api/v1/projects` | 列出已加入项目 / 创建项目 |
+| `PATCH` | `/api/v1/projects/{projectID}` | owner 重命名项目 |
 | `GET` | `/api/v1/projects/{projectID}/members` | 列出项目成员及角色 |
 | `POST` | `/api/v1/projects/{projectID}/members` | owner 按邮箱添加 editor 或 viewer |
 | `DELETE` | `/api/v1/projects/{projectID}/members/{userID}` | owner 移除成员；项目 owner 不可移除 |
