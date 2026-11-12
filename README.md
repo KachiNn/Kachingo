@@ -44,6 +44,7 @@ go run .
 | `PATCH` | `/api/v1/projects/{projectID}` | owner 重命名项目 |
 | `GET` | `/api/v1/projects/{projectID}/members` | 列出项目成员及角色 |
 | `POST` | `/api/v1/projects/{projectID}/members` | owner 按邮箱添加 editor 或 viewer |
+| `PATCH` | `/api/v1/projects/{projectID}/members/{userID}` | owner 修改成员角色；项目 owner 角色受保护 |
 | `DELETE` | `/api/v1/projects/{projectID}/members/{userID}` | owner 移除成员；项目 owner 不可移除 |
 | `GET` / `POST` | `/api/v1/projects/{projectID}/tasks` | 列出 / 创建项目任务 |
 | `GET` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 获取单个项目任务及当前 `version` |

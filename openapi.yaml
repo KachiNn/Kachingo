@@ -133,6 +133,25 @@ paths:
         '201': { description: Member added }
         '404': { description: Project or user not found }
   /api/v1/projects/{projectID}/members/{userID}:
+    patch:
+      summary: Change a project member role (owner only)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: userID, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [editor, viewer] }
+      responses:
+        '204': { description: Member role changed }
+        '400': { description: Invalid role or identifier }
+        '404': { description: 'Project, member, or owner authorization not found' }
+        '409': { description: Project owner role is protected }
     delete:
       summary: Remove a member (owner only; project owner cannot be removed)
       parameters:

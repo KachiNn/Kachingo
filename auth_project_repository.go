@@ -28,6 +28,7 @@ type projectRepository interface {
 	Role(context.Context, int64, int64) (string, error)
 	UserByEmail(context.Context, string) (identity, error)
 	AddMember(context.Context, int64, int64, string) error
+	UpdateMemberRole(context.Context, int64, int64, string) error
 	ListMembers(context.Context, int64) ([]projectMember, error)
 	RemoveMember(context.Context, int64, int64) (bool, error)
 }
@@ -154,6 +155,28 @@ func (repo sqliteProjectRepository) AddMember(ctx context.Context, projectID, us
 	}
 	if count == 0 {
 		return errMemberAlreadyAdded
+	}
+	return nil
+}
+
+func (repo sqliteProjectRepository) UpdateMemberRole(ctx context.Context, projectID, userID int64, role string) error {
+	result, err := repo.db.ExecContext(ctx, "UPDATE project_members SET role=? WHERE project_id=? AND user_id=? AND role!='owner'", role, projectID, userID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	var currentRole string
+	if err := repo.db.QueryRowContext(ctx, "SELECT role FROM project_members WHERE project_id=? AND user_id=?", projectID, userID).Scan(&currentRole); err != nil {
+		return err
+	}
+	if currentRole == "owner" {
+		return errProjectOwnerProtected
 	}
 	return nil
 }

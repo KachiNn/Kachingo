@@ -73,6 +73,7 @@ func (s *v1Server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/projects/{projectID}", s.auth(s.updateProject))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/members", s.auth(s.listMembers))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/members", s.auth(s.addMember))
+	mux.HandleFunc("PATCH /api/v1/projects/{projectID}/members/{userID}", s.auth(s.updateMemberRole))
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/members/{userID}", s.auth(s.removeMember))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks", s.auth(s.listTasks))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks", s.auth(s.createTask))
@@ -293,6 +294,49 @@ func (s *v1Server) listMembers(w http.ResponseWriter, r *http.Request, user iden
 		return
 	}
 	writeJSON(w, 200, items)
+}
+
+func (s *v1Server) updateMemberRole(w http.ResponseWriter, r *http.Request, user identity) {
+	projectID, ok := parseProjectID(r)
+	if !ok {
+		writeJSON(w, 400, map[string]string{"error": "invalid project id"})
+		return
+	}
+	role, err := s.role(r.Context(), projectID, user.ID)
+	if err != nil || role != "owner" {
+		writeJSON(w, 404, map[string]string{"error": "project not found"})
+		return
+	}
+	memberID, err := strconv.ParseInt(r.PathValue("userID"), 10, 64)
+	if err != nil || memberID < 1 {
+		writeJSON(w, 400, map[string]string{"error": "invalid user id"})
+		return
+	}
+	var in struct {
+		Role string `json:"role"`
+	}
+	if decodeJSON(w, r, &in) != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if in.Role != "editor" && in.Role != "viewer" {
+		writeJSON(w, 400, map[string]string{"error": "role must be editor or viewer"})
+		return
+	}
+	err = s.projects.UpdateMemberRole(r.Context(), projectID, memberID, in.Role)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "project member not found"})
+		return
+	}
+	if errors.Is(err, errProjectOwnerProtected) {
+		writeJSON(w, 409, map[string]string{"error": "project owner role cannot be changed"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	w.WriteHeader(204)
 }
 
 func (s *v1Server) removeMember(w http.ResponseWriter, r *http.Request, user identity) {

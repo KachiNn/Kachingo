@@ -127,6 +127,25 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if len(members) != 2 || members[0].Role != "owner" || members[1].Role != "viewer" {
 		t.Fatalf("unexpected members: %+v", members)
 	}
+	memberPath := membersPath + "/" + strconv.FormatInt(members[1].User.ID, 10)
+	if viewerRoleChange := callAPI(handler, http.MethodPatch, memberPath, viewer, apiJSON(t, map[string]string{"role": "editor"})); viewerRoleChange.Code != http.StatusNotFound {
+		t.Fatalf("viewer role change status=%d", viewerRoleChange.Code)
+	}
+	if ownerRoleChange := callAPI(handler, http.MethodPatch, membersPath+"/"+strconv.FormatInt(p.ID, 10), owner, apiJSON(t, map[string]string{"role": "viewer"})); ownerRoleChange.Code != http.StatusConflict {
+		t.Fatalf("owner role change status=%d", ownerRoleChange.Code)
+	}
+	if changed := callAPI(handler, http.MethodPatch, memberPath, owner, apiJSON(t, map[string]string{"role": "editor"})); changed.Code != http.StatusNoContent {
+		t.Fatalf("change member role status=%d body=%s", changed.Code, changed.Body.String())
+	}
+	updatedMembers := callAPI(handler, http.MethodGet, membersPath, owner, "")
+	var updatedMemberList []projectMember
+	decodeResponse(t, updatedMembers, &updatedMemberList)
+	if updatedMemberList[1].Role != "editor" {
+		t.Fatalf("member role was not updated: %+v", updatedMemberList[1])
+	}
+	if invalidRole := callAPI(handler, http.MethodPatch, memberPath, owner, apiJSON(t, map[string]string{"role": "owner"})); invalidRole.Code != http.StatusBadRequest {
+		t.Fatalf("invalid role status=%d", invalidRole.Code)
+	}
 	removeOwner := callAPI(handler, http.MethodDelete, membersPath+"/"+strconv.FormatInt(p.ID, 10), owner, "")
 	if removeOwner.Code != http.StatusConflict {
 		t.Fatalf("owner removal status=%d", removeOwner.Code)
