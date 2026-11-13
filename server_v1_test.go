@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -193,6 +194,31 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	decodeResponse(t, listed, &page)
 	if page.Total != 1 || len(page.Items) != 1 {
 		t.Fatalf("unexpected page: %+v", page)
+	}
+	specialTitle := "Release 100%_ready!\\now"
+	specialTask := callAPI(handler, http.MethodPost, projectPath+"/tasks", owner, apiJSON(t, map[string]string{"title": specialTitle}))
+	if specialTask.Code != http.StatusCreated {
+		t.Fatalf("create special task status=%d body=%s", specialTask.Code, specialTask.Body.String())
+	}
+	var searchable projectTask
+	decodeResponse(t, specialTask, &searchable)
+	for _, keyword := range []string{"%_ready!", "_ready", "!", "!\\now"} {
+		path := projectPath + "/tasks?q=" + url.QueryEscape(keyword)
+		response := callAPI(handler, http.MethodGet, path, owner, "")
+		var result struct {
+			Items []projectTask `json:"items"`
+			Total int           `json:"total"`
+		}
+		if response.Code != http.StatusOK {
+			t.Fatalf("search %q status=%d body=%s", keyword, response.Code, response.Body.String())
+		}
+		decodeResponse(t, response, &result)
+		if result.Total != 1 || len(result.Items) != 1 || result.Items[0].Title != specialTitle {
+			t.Fatalf("search %q returned %+v", keyword, result)
+		}
+	}
+	if removed := callAPI(handler, http.MethodDelete, projectPath+"/tasks/"+strconv.FormatInt(searchable.ID, 10), owner, ""); removed.Code != http.StatusNoContent {
+		t.Fatalf("cleanup special task status=%d body=%s", removed.Code, removed.Body.String())
 	}
 	taskPath := projectPath + "/tasks/" + strconv.FormatInt(task.ID, 10)
 	fetched := callAPI(handler, http.MethodGet, taskPath, viewer, "")

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 var (
@@ -25,10 +26,10 @@ type projectTaskRepository interface {
 type sqliteProjectTaskRepository struct{ db *sql.DB }
 
 func (repo sqliteProjectTaskRepository) List(ctx context.Context, projectID int64, status, query string, assigneeID int64, unassigned, overdue bool, limit, offset int) (projectTaskPage, error) {
-	pattern := "%" + query + "%"
+	pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(query) + "%"
 	var page projectTaskPage
 	page.Limit, page.Offset = limit, offset
-	filters := "project_id=? AND (?='' OR status=?) AND title LIKE ? AND (?=0 OR assignee_id=?) AND (?=0 OR assignee_id IS NULL) AND (?=0 OR (due_date < date('now') AND status != 'done'))"
+	filters := "project_id=? AND (?='' OR status=?) AND title LIKE ? ESCAPE '!' AND (?=0 OR assignee_id=?) AND (?=0 OR assignee_id IS NULL) AND (?=0 OR (due_date < date('now') AND status != 'done'))"
 	args := []any{projectID, status, status, pattern, boolInt(assigneeID > 0), assigneeID, boolInt(unassigned), boolInt(overdue)}
 	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM project_tasks WHERE "+filters, args...).Scan(&page.Total); err != nil {
 		return page, err
