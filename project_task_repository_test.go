@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"testing"
 )
 
@@ -19,8 +20,12 @@ func TestDatabaseMigrationsAreIdempotent(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 5 {
-		t.Fatalf("applied migrations=%d, want 5", count)
+	migrations, err := fs.Glob(migrationFiles, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != len(migrations) {
+		t.Fatalf("applied migrations=%d, want %d", count, len(migrations))
 	}
 	rows, err := db.Query("PRAGMA table_info(project_tasks)")
 	if err != nil {

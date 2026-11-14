@@ -345,6 +345,12 @@ func taskHandler(store *Store) http.HandlerFunc {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "import-legacy" {
+		if err := runLegacyImport(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	addr := os.Getenv("ADDR")
 	if addr == "" {
 		addr = ":8080"

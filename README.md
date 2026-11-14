@@ -30,6 +30,14 @@ go run .
 | `DATABASE_FILE` | `data/kachingo.db` | 新版协作 API 的 SQLite 数据库 |
 | `DATA_FILE` | `data/tasks.json` | 旧版 `/api/tasks` 接口的数据文件 |
 
+将旧版 JSON 任务导入新版 SQLite 项目任务时，先确保目标项目和 owner/editor 账号已存在，然后执行：
+
+```sh
+go run . import-legacy --project-id 1 --actor-id 1
+```
+
+默认读取 `DATA_FILE` 与 `DATABASE_FILE` 指定的文件，也可用 `--file`、`--database` 覆盖。导入需要明确指定项目和操作者；viewer 或非项目成员不能执行。`done` 映射为 `done`，未完成任务映射为 `open`，优先级设为 `normal`，描述为空，任务创建时间尽量保留。任务 ID 由 SQLite 分配，导入操作者会写入任务创建活动。整个文件在一个事务中导入，出错会回滚；源 JSON 不会被修改。相同源文件内容再次导入同一项目会被拒绝，避免重复创建任务；修改后的文件内容会被视为另一次导入。此工具不会改变旧版 `/api/tasks` 的读写行为。
+
 ## API
 
 `GET /healthz` 检查进程存活；`GET /readyz` 通过有时限的数据库 Ping 检查服务是否可接收流量，数据库不可用时返回 503。新版业务接口统一使用 `/api/v1`。除注册和登录外，其余业务接口需要传入 `Authorization: Bearer <token>`。
