@@ -114,6 +114,21 @@ docker compose up --build
 
 容器以非 root 用户运行，Docker healthcheck 通过 `/readyz` 检查数据库连接，数据保存在命名卷 `kachingo-data`。停止服务使用 `docker compose down`；保留数据卷。
 
+## 备份与恢复
+
+在线备份命令示例：
+
+    docker compose run --rm kachingo backup --file /data/backups/kachingo-$(date +%Y%m%d-%H%M%S).db
+
+备份使用 SQLite online backup API，可在服务运行时执行；输出文件必须不存在。恢复前停止服务，并指定一个尚不存在的数据库路径：
+
+    docker compose stop kachingo
+    docker compose run --rm --entrypoint sh kachingo -c 'mv /data/kachingo.db /data/kachingo.db.before-restore'
+    docker compose run --rm kachingo restore --file /data/backups/kachingo-YYYYMMDD-HHMMSS.db --database /data/kachingo.db
+    docker compose up -d
+
+恢复会先检查备份完整性，且拒绝覆盖已有文件。恢复成功后启动服务，应用会按需执行数据库迁移。将备份另存到独立存储，避免与数据卷故障同时丢失。
+
 ## API 契约与 CI
 
 OpenAPI 3.1 契约位于 `openapi.yaml`。GitHub Actions 在 Go 1.22 上执行测试、`go vet` 和构建，并校验 Docker 镜像与 Compose 配置。

@@ -345,11 +345,20 @@ func taskHandler(store *Store) http.HandlerFunc {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "import-legacy" {
-		if err := runLegacyImport(os.Args[2:]); err != nil {
+	if len(os.Args) > 1 {
+		var err error
+		switch os.Args[1] {
+		case "import-legacy":
+			err = runLegacyImport(os.Args[2:])
+		case "backup", "restore":
+			err = runDatabaseCommand(os.Args[1:])
+		}
+		if err != nil {
 			log.Fatal(err)
 		}
-		return
+		if os.Args[1] == "import-legacy" || os.Args[1] == "backup" || os.Args[1] == "restore" {
+			return
+		}
 	}
 	addr := os.Getenv("ADDR")
 	if addr == "" {
