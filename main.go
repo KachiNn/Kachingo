@@ -381,6 +381,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载任务数据失败（%s）：%v", dataFile, err)
 	}
+	loginLimit, err := parseLoginRateLimit(os.Getenv("LOGIN_RATE_LIMIT"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -388,7 +392,7 @@ func main() {
 	mux.HandleFunc("GET /readyz", readinessHandler(db))
 	mux.HandleFunc("/api/tasks", taskHandler(store))
 	mux.HandleFunc("/api/tasks/", taskHandler(store))
-	mux.Handle("/api/v1/", (&v1Server{db: db}).routes())
+	mux.Handle("/api/v1/", (&v1Server{db: db, loginLimiter: newLoginRateLimiter(loginLimit, time.Minute)}).routes())
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           requestLogging(mux),

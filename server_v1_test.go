@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func apiJSON(t *testing.T, value any) string {
@@ -89,6 +90,21 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	}
 	if unknownEmail := callAPI(handler, http.MethodPost, "/api/v1/auth/login", "", apiJSON(t, map[string]string{"email": "missing@example.com", "password": "wrong-password-000"})); unknownEmail.Code != http.StatusUnauthorized || unknownEmail.Body.String() != wrongPassword.Body.String() {
 		t.Fatalf("unknown email response differs: status=%d body=%s", unknownEmail.Code, unknownEmail.Body.String())
+	}
+	rateLimitedServer := &v1Server{db: db, loginLimiter: newLoginRateLimiter(1, time.Minute)}
+	rateLimitedHandler := rateLimitedServer.routes()
+	for i := 0; i < 2; i++ {
+		recorder := callAPI(rateLimitedHandler, http.MethodPost, "/api/v1/auth/login", "", apiJSON(t, map[string]string{"email": "missing@example.com", "password": "wrong-password-000"}))
+		want := http.StatusUnauthorized
+		if i == 1 {
+			want = http.StatusTooManyRequests
+		}
+		if recorder.Code != want {
+			t.Fatalf("rate-limited login attempt %d status=%d, want %d", i+1, recorder.Code, want)
+		}
+		if i == 1 && recorder.Header().Get("Retry-After") == "" {
+			t.Fatal("rate limit response omitted Retry-After")
+		}
 	}
 	viewer := registerUser(t, handler, "viewer@example.com")
 	outsider := registerUser(t, handler, "outsider@example.com")

@@ -47,10 +47,11 @@ func validateDueDate(value *string) error {
 const dummyBcryptHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 type v1Server struct {
-	db       *sql.DB
-	authRepo authRepository
-	projects projectRepository
-	tasks    projectTaskRepository
+	db           *sql.DB
+	authRepo     authRepository
+	projects     projectRepository
+	tasks        projectTaskRepository
+	loginLimiter *loginRateLimiter
 }
 
 func (s *v1Server) routes() http.Handler {
@@ -65,7 +66,7 @@ func (s *v1Server) routes() http.Handler {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/auth/register", s.register)
-	mux.HandleFunc("POST /api/v1/auth/login", s.login)
+	mux.HandleFunc("POST /api/v1/auth/login", loginRateLimitHandler(s.loginLimiter, s.login))
 	mux.HandleFunc("POST /api/v1/auth/logout", s.auth(s.logout))
 	mux.HandleFunc("GET /api/v1/me", s.auth(s.me))
 	mux.HandleFunc("GET /api/v1/projects", s.auth(s.listProjects))
@@ -147,6 +148,9 @@ func (s *v1Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	passwordErr := bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password))
 	if err != nil || passwordErr != nil {
+		if s.loginLimiter != nil {
+			s.loginLimiter.failed(clientAddress(r))
+		}
 		writeJSON(w, 401, map[string]string{"error": "invalid email or password"})
 		return
 	}
@@ -159,6 +163,9 @@ func (s *v1Server) login(w http.ResponseWriter, r *http.Request) {
 	if err := s.authRepo.CreateSession(r.Context(), user.ID, digest, expires); err != nil {
 		writeJSON(w, 500, map[string]string{"error": "could not create session"})
 		return
+	}
+	if s.loginLimiter != nil {
+		s.loginLimiter.succeeded(clientAddress(r))
 	}
 	writeJSON(w, 200, map[string]any{"token": token, "token_type": "Bearer", "expires_at": expires.Format(time.RFC3339Nano), "user": user})
 }

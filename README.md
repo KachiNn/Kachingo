@@ -29,6 +29,9 @@ go run .
 | `ADDR` | `:8080` | HTTP 监听地址 |
 | `DATABASE_FILE` | `data/kachingo.db` | 新版协作 API 的 SQLite 数据库 |
 | `DATA_FILE` | `data/tasks.json` | 旧版 `/api/tasks` 接口的数据文件 |
+| `LOGIN_RATE_LIMIT` | `10` | 每个客户端 IP 每分钟允许的失败登录次数（1-10000） |
+
+登录接口按 TCP 客户端 IP 统计失败次数，超过阈值返回 `429` 和 `Retry-After`；成功登录后清零。计数仅存于进程内，服务重启后清空；不读取 `X-Forwarded-For` 等代理头。该实现适用于单实例部署，多实例环境应在可信反向代理或共享存储层实现限流。
 
 将旧版 JSON 任务导入新版 SQLite 项目任务时，先确保目标项目和 owner/editor 账号已存在，然后执行：
 
