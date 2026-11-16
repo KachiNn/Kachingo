@@ -236,6 +236,27 @@ func TestProjectCollaborationAuthorization(t *testing.T) {
 	if removed := callAPI(handler, http.MethodDelete, projectPath+"/tasks/"+strconv.FormatInt(searchable.ID, 10), owner, ""); removed.Code != http.StatusNoContent {
 		t.Fatalf("cleanup special task status=%d body=%s", removed.Code, removed.Body.String())
 	}
+	descriptionTask := callAPI(handler, http.MethodPost, projectPath+"/tasks", owner, apiJSON(t, map[string]string{"title": "Routine review", "description": "Findable phrase: api-docs-search-9821"}))
+	if descriptionTask.Code != http.StatusCreated {
+		t.Fatalf("create description task status=%d body=%s", descriptionTask.Code, descriptionTask.Body.String())
+	}
+	descriptionSearch := callAPI(handler, http.MethodGet, projectPath+"/tasks?q="+url.QueryEscape("api-docs-search-9821"), owner, "")
+	var descriptionResult struct {
+		Items []projectTask `json:"items"`
+		Total int           `json:"total"`
+	}
+	if descriptionSearch.Code != http.StatusOK {
+		t.Fatalf("description search status=%d body=%s", descriptionSearch.Code, descriptionSearch.Body.String())
+	}
+	decodeResponse(t, descriptionSearch, &descriptionResult)
+	if descriptionResult.Total != 1 || len(descriptionResult.Items) != 1 || descriptionResult.Items[0].Title != "Routine review" {
+		t.Fatalf("description search returned %+v", descriptionResult)
+	}
+	var descriptionTaskValue projectTask
+	decodeResponse(t, descriptionTask, &descriptionTaskValue)
+	if removed := callAPI(handler, http.MethodDelete, projectPath+"/tasks/"+strconv.FormatInt(descriptionTaskValue.ID, 10), owner, ""); removed.Code != http.StatusNoContent {
+		t.Fatalf("cleanup description task status=%d body=%s", removed.Code, removed.Body.String())
+	}
 	taskPath := projectPath + "/tasks/" + strconv.FormatInt(task.ID, 10)
 	fetched := callAPI(handler, http.MethodGet, taskPath, viewer, "")
 	if fetched.Code != http.StatusOK {

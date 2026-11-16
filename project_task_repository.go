@@ -29,8 +29,8 @@ func (repo sqliteProjectTaskRepository) List(ctx context.Context, projectID int6
 	pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(query) + "%"
 	var page projectTaskPage
 	page.Limit, page.Offset = limit, offset
-	filters := "project_id=? AND (?='' OR status=?) AND title LIKE ? ESCAPE '!' AND (?=0 OR assignee_id=?) AND (?=0 OR assignee_id IS NULL) AND (?=0 OR (due_date < date('now') AND status != 'done'))"
-	args := []any{projectID, status, status, pattern, boolInt(assigneeID > 0), assigneeID, boolInt(unassigned), boolInt(overdue)}
+	filters := "project_id=? AND (?='' OR status=?) AND (?='' OR (title LIKE ? ESCAPE '!' OR description LIKE ? ESCAPE '!')) AND (?=0 OR assignee_id=?) AND (?=0 OR assignee_id IS NULL) AND (?=0 OR (due_date < date('now') AND status != 'done'))"
+	args := []any{projectID, status, status, query, pattern, pattern, boolInt(assigneeID > 0), assigneeID, boolInt(unassigned), boolInt(overdue)}
 	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM project_tasks WHERE "+filters, args...).Scan(&page.Total); err != nil {
 		return page, err
 	}
