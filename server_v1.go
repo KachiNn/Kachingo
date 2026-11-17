@@ -77,6 +77,7 @@ func (s *v1Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/members", s.auth(s.addMember))
 	mux.HandleFunc("PATCH /api/v1/projects/{projectID}/members/{userID}", s.auth(s.updateMemberRole))
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/members/{userID}", s.auth(s.removeMember))
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/board", s.auth(s.board))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks", s.auth(s.listTasks))
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/tasks", s.auth(s.createTask))
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/tasks/{taskID}", s.auth(s.getTask))
@@ -396,6 +397,28 @@ func (s *v1Server) authorize(w http.ResponseWriter, r *http.Request, user identi
 	}
 	return pid, true
 }
+func (s *v1Server) board(w http.ResponseWriter, r *http.Request, user identity) {
+	pid, ok := s.authorize(w, r, user, false)
+	if !ok {
+		return
+	}
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeJSON(w, 400, map[string]string{"error": "limit must be between 1 and 100"})
+			return
+		}
+		limit = parsed
+	}
+	columns, err := s.tasks.Board(r.Context(), pid, limit)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, 200, columns)
+}
+
 func (s *v1Server) listTasks(w http.ResponseWriter, r *http.Request, user identity) {
 	pid, ok := s.authorize(w, r, user, false)
 	if !ok {

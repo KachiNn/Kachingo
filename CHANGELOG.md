@@ -2,6 +2,10 @@
 
 ## 2026-11-17
 
+- 增加项目任务看板接口，按 open、in_progress、done 三列返回任务总数和有限任务项；成员只读，支持每列 limit。
+- 增加看板 200/400/404/500 分支测试。
+- CI 增加 CGO race 检测 job；本地无 CGO 时仍使用普通测试和静态检查。
+
 - 增加 WebSocket 实时协作：`GET /ws?token=<bearer_token>` 建立 WebSocket 连接，任务创建、更新和评论发布实时推送给项目在线成员。
 - WebSocket 连接通过 URL 查询参数认证，服务端每 30 秒 ping，60 秒无 pong 断开；消息格式为 JSON `{"type", "project_id", "data"}`。
 - 项目成员自动接收所属项目的实时事件，无需订阅；连接建立时读取成员项目列表，用于事件过滤。

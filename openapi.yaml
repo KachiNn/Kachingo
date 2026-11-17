@@ -161,6 +161,17 @@ paths:
         '204': { description: Member removed }
         '404': { description: Project or member not found }
         '409': { description: Project owner is protected }
+  /api/v1/projects/{projectID}/board:
+    get:
+      summary: Read project tasks grouped by status (project members)
+      parameters:
+        - { name: projectID, in: path, required: true, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 }, description: Maximum tasks returned in each status column }
+      responses:
+        '200': { description: 'Ordered open, in_progress, and done columns with total count and items' }
+        '400': { description: Invalid project ID or limit }
+        '404': { description: Project not found or current user is not a member }
+        '500': { description: Database error }
   /api/v1/projects/{projectID}/tasks:
     get:
       summary: List project tasks

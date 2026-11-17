@@ -58,6 +58,7 @@ go run . import-legacy --project-id 1 --actor-id 1
 | `POST` | `/api/v1/projects/{projectID}/members` | owner 按邮箱添加 editor 或 viewer |
 | `PATCH` | `/api/v1/projects/{projectID}/members/{userID}` | owner 修改成员角色；项目 owner 角色受保护 |
 | `DELETE` | `/api/v1/projects/{projectID}/members/{userID}` | owner 移除成员；项目 owner 不可移除 |
+| `GET` | `/api/v1/projects/{projectID}/board` | 按 open/in_progress/done 分列返回项目任务；`limit` 控制每列最多返回数量 |
 | `GET` / `POST` | `/api/v1/projects/{projectID}/tasks` | 列出 / 创建项目任务 |
 | `GET` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 获取单个项目任务及当前 `version` |
 | `PATCH` / `DELETE` | `/api/v1/projects/{projectID}/tasks/{taskID}` | 更新 / 删除项目任务 |

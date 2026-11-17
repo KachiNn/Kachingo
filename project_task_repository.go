@@ -15,6 +15,7 @@ var (
 
 type projectTaskRepository interface {
 	List(context.Context, int64, string, string, int64, bool, bool, int, int) (projectTaskPage, error)
+	Board(context.Context, int64, int) ([]boardColumn, error)
 	Create(context.Context, int64, int64, string, string, string, *int64, *string) (projectTask, error)
 	Get(context.Context, int64, int64) (projectTask, error)
 	Update(context.Context, projectTask, int64, int64, string) (projectTask, error)
@@ -24,6 +25,41 @@ type projectTaskRepository interface {
 	Delete(context.Context, int64, int64) (bool, error)
 }
 type sqliteProjectTaskRepository struct{ db *sql.DB }
+
+type boardColumn struct {
+	Status string        `json:"status"`
+	Total  int64         `json:"total"`
+	Items  []projectTask `json:"items"`
+}
+
+func (repo sqliteProjectTaskRepository) Board(ctx context.Context, projectID int64, limit int) ([]boardColumn, error) {
+	columns := make([]boardColumn, 0, 3)
+	for _, status := range []string{"open", "in_progress", "done"} {
+		column := boardColumn{Status: status, Items: make([]projectTask, 0)}
+		if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM project_tasks WHERE project_id=? AND status=?", projectID, status).Scan(&column.Total); err != nil {
+			return nil, err
+		}
+		rows, err := repo.db.QueryContext(ctx, "SELECT id,project_id,title,description,status,priority,created_at,updated_at,version,assignee_id,due_date FROM project_tasks WHERE project_id=? AND status=? ORDER BY due_date IS NULL,due_date,id LIMIT ?", projectID, status, limit)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var task projectTask
+			if err := scanProjectTask(rows, &task); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			column.Items = append(column.Items, task)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		columns = append(columns, column)
+	}
+	return columns, nil
+}
 
 func (repo sqliteProjectTaskRepository) List(ctx context.Context, projectID int64, status, query string, assigneeID int64, unassigned, overdue bool, limit, offset int) (projectTaskPage, error) {
 	pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(query) + "%"
