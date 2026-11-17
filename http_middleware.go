@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -31,6 +33,10 @@ func (recorder *statusRecorder) Write(data []byte) (int, error) {
 	return n, err
 }
 func (recorder *statusRecorder) Unwrap() http.ResponseWriter { return recorder.ResponseWriter }
+
+func (recorder *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(recorder.ResponseWriter).Hijack()
+}
 
 func requestID() string {
 	var data [16]byte

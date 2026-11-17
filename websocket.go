@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -10,9 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
+var upgrader = websocket.Upgrader{}
 
 type wsMessage struct {
 	Type      string          `json:"type"`
@@ -23,7 +22,8 @@ type wsMessage struct {
 type wsConnection struct {
 	conn      *websocket.Conn
 	userID    int64
-	projects  map[int64]bool
+	projects  projectRepository
+	tokenHash string
 	send      chan wsMessage
 	hub       *wsHub
 	writeMu   sync.Mutex
@@ -65,7 +65,11 @@ func (h *wsHub) run() {
 		case msg := <-h.broadcast:
 			h.mu.RLock()
 			for conn := range h.connections {
-				if msg.ProjectID == 0 || conn.projects[msg.ProjectID] {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				user, authErr := h.db.UserForSession(ctx, conn.tokenHash, time.Now())
+				_, roleErr := conn.projects.Role(ctx, msg.ProjectID, conn.userID)
+				cancel()
+				if msg.ProjectID != 0 && authErr == nil && user.ID == conn.userID && roleErr == nil {
 					select {
 					case conn.send <- msg:
 					default:
@@ -159,22 +163,13 @@ func (s *v1Server) wsHandler(hub *wsHub) http.HandlerFunc {
 			log.Printf("ws upgrade failed user=%d: %v", user.ID, err)
 			return
 		}
-		projects, err := s.projects.ListForUser(r.Context(), user.ID)
-		if err != nil {
-			conn.Close()
-			log.Printf("ws list projects failed user=%d: %v", user.ID, err)
-			return
-		}
-		projectMap := make(map[int64]bool, len(projects))
-		for _, p := range projects {
-			projectMap[p.ID] = true
-		}
 		wsConn := &wsConnection{
-			conn:     conn,
-			userID:   user.ID,
-			projects: projectMap,
-			send:     make(chan wsMessage, 256),
-			hub:      hub,
+			conn:      conn,
+			userID:    user.ID,
+			projects:  s.projects,
+			tokenHash: tokenDigest(token),
+			send:      make(chan wsMessage, 256),
+			hub:       hub,
 		}
 		hub.register <- wsConn
 		go wsConn.writePump()
