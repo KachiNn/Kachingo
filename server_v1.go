@@ -52,6 +52,7 @@ type v1Server struct {
 	projects     projectRepository
 	tasks        projectTaskRepository
 	loginLimiter *loginRateLimiter
+	wsHub        *wsHub
 }
 
 func (s *v1Server) routes() http.Handler {
@@ -497,6 +498,10 @@ func (s *v1Server) createTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
+	if s.wsHub != nil {
+		data, _ := json.Marshal(task)
+		s.wsHub.Broadcast(wsMessage{Type: "task_created", ProjectID: pid, Data: data})
+	}
 	writeJSON(w, 201, task)
 }
 func (s *v1Server) getTask(w http.ResponseWriter, r *http.Request, user identity) {
@@ -612,6 +617,10 @@ func (s *v1Server) updateTask(w http.ResponseWriter, r *http.Request, user ident
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
 	}
+	if s.wsHub != nil {
+		data, _ := json.Marshal(updated)
+		s.wsHub.Broadcast(wsMessage{Type: "task_updated", ProjectID: updated.ProjectID, Data: data})
+	}
 	writeJSON(w, 200, updated)
 }
 func (s *v1Server) taskIDForRequest(w http.ResponseWriter, r *http.Request, projectID int64) (int64, bool) {
@@ -672,6 +681,10 @@ func (s *v1Server) createTaskComment(w http.ResponseWriter, r *http.Request, use
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "database error"})
 		return
+	}
+	if s.wsHub != nil {
+		data, _ := json.Marshal(comment)
+		s.wsHub.Broadcast(wsMessage{Type: "comment_created", ProjectID: projectID, Data: data})
 	}
 	writeJSON(w, 201, comment)
 }

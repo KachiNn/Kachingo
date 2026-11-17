@@ -277,6 +277,20 @@ paths:
         '204': { description: Task deleted }
         '403': { description: Viewer cannot write }
         '404': { description: Task not found }
+  /ws:
+    get:
+      summary: Establish WebSocket connection for real-time collaboration
+      description: Upgrade to WebSocket; server sends ping every 30s, client must respond with pong. Task create/update and comment create events are broadcast to project members in JSON format.
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+          description: Bearer session token for authentication
+      responses:
+        '101': { description: Switching Protocols to WebSocket }
+        '401': { description: Missing or invalid token }
 components:
   securitySchemes:
     bearerAuth:

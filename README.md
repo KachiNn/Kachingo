@@ -11,6 +11,7 @@ Kachingo 是一个用 Go 构建的轻量级项目任务协作服务。它提供�
 - 项目任务增删改查，支持状态、关键词、分页和优先级
 - SQLite 持久化，外键约束、索引和按版本执行的 SQL migration
 - 项目资源按成员关系隔离；viewer 只读
+- **WebSocket 实时协作**：任务变更、评论发布实时推送给项目在线成员；服务端每 30 秒 ping，60 秒无响应断开
 - 原有 `/api/tasks` JSON 文件接口暂时保留，便于兼容旧用法
 - HTTP 服务超时、请求体大小限制、健康检查和优雅关闭
 
@@ -84,6 +85,8 @@ curl -X POST http://localhost:8080/api/v1/projects/1/tasks \
 ```
 
 任务状态为 `open`、`in_progress` 或 `done`；优先级为 `low`、`normal` 或 `high`。可选负责人必须是项目成员，截止日期使用 `YYYY-MM-DD`。任务列表支持 `status`、`q`、`assignee_id`、`unassigned=true`、`overdue=true`、`limit`（1-100）和 `offset`。`q` 对标题和描述执行不区分大小写的子串搜索，`%`、`_` 等字符按字面匹配。任务响应包含 `version`；更新时必须提交刚读取到的版本，成功后版本递增，过期版本返回 409，缺少版本返回 428。PATCH 中 `assignee_id: null` 或 `due_date: null` 可清除对应字段；移除成员会自动清除其项目任务指派。任务创建和状态变化会原子记录操作者与状态前后值，活动历史按发生顺序读取。任务评论限制为 1-5000 个 Unicode 字符，按创建顺序返回；viewer 只读，删除任务时评论一并清理。没有项目成员关系时，项目返回 404；viewer 写入返回 403。
+
+**WebSocket 实时推送**：`GET /ws?token=<bearer_token>` 升级到 WebSocket 连接。服务端每 30 秒发送 ping，客户端需响应 pong。任务创建、更新和评论发布会实时推送 JSON 消息给项目在线成员：`{"type": "task_created"|"task_updated"|"comment_created", "project_id": <id>, "data": <resource>}`。客户端应实现断线自动重连。
 
 ## 代码结构
 
