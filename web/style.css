@@ -26,6 +26,10 @@ button.small { padding:2px 8px; font-size:12px; background:#edf0fb; color:var(--
 .badge.on { background:#d3f9d8; color:#2b8a3e; }
 .inline { display:grid; grid-template-columns:1fr 90px 150px auto; gap:8px; margin-bottom:12px; }
 #member-form { grid-template-columns:1fr 160px auto; margin:10px 0 0; }
+#members li { gap:8px; align-items:center; flex-wrap:wrap; cursor:default; }
+.member-name { overflow-wrap:anywhere; }
+.member-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.member-actions button:disabled { opacity:.55; cursor:wait; }
 #project-form { display:grid; gap:6px; }
 .board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
 .column { background:#eceff7; border-radius:8px; padding:10px; min-height:120px; }

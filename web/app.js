@@ -119,6 +119,7 @@ async function createProject(event) {
 }
 
 async function openProject(project) {
+  $('members').replaceChildren();
   state.project = project;
   $('project-view').hidden = false;
   $('project-title').textContent = project.name;
@@ -218,19 +219,53 @@ async function renderComments(task, box) {
 
 /* ---------- 成员 ---------- */
 async function loadMembers() {
-  const members = await api('/projects/' + state.project.id + '/members');
+  const project = state.project;
+  const membersPath = '/projects/' + project.id + '/members';
+  const members = await api(membersPath);
+  if (state.project !== project) return;
+
   const list = $('members');
   list.replaceChildren();
-  for (const m of members) {
-    const row = el('li', {}, el('span', {}, m.user.name + '（' + m.user.email + '）'), el('span', { class: 'badge' }, m.role));
-    if (state.project.role === 'owner' && m.role !== 'owner') {
-      row.append(el('button', { class: 'small', type: 'button', onclick: () => guarded(async () => {
-        if (!window.confirm('移除成员 ' + m.user.name + '？')) return;
-        await api('/projects/' + state.project.id + '/members/' + m.user.id, { method: 'DELETE' });
-        await loadMembers();
-      }) }, '移除'));
+  for (const member of members) {
+    const badge = el('span', { class: 'badge' }, member.role);
+    const actions = el('div', { class: 'member-actions' }, badge);
+    const name = el('span', { class: 'member-name' }, member.user.name + '（' + member.user.email + '）');
+    if (project.role === 'owner' && member.role !== 'owner') {
+      const memberPath = membersPath + '/' + member.user.id;
+      const change = el('button', { class: 'small', type: 'button' });
+      const remove = el('button', { class: 'small', type: 'button' }, '移除');
+      const updateLabel = () => {
+        const label = member.role === 'viewer' ? '设为编辑' : '设为只读';
+        change.textContent = label;
+        change.setAttribute('aria-label', '将 ' + member.user.name + ' ' + label);
+      };
+      updateLabel();
+      const runMemberAction = (action) => guarded(async () => {
+        if (state.project !== project) return;
+        change.disabled = remove.disabled = true;
+        try {
+          await action();
+        } finally {
+          change.disabled = remove.disabled = false;
+        }
+      });
+      change.addEventListener('click', () => runMemberAction(async () => {
+        const role = member.role === 'viewer' ? 'editor' : 'viewer';
+        await api(memberPath, { method: 'PATCH', body: { role } });
+        if (state.project !== project) return;
+        member.role = role;
+        badge.textContent = role;
+        updateLabel();
+        notify('已更新 ' + member.user.name + ' 的角色');
+      }));
+      remove.addEventListener('click', () => runMemberAction(async () => {
+        if (!window.confirm('移除成员 ' + member.user.name + '？')) return;
+        await api(memberPath, { method: 'DELETE' });
+        if (state.project === project) await loadMembers();
+      }));
+      actions.append(change, remove);
     }
-    list.append(row);
+    list.append(el('li', {}, name, actions));
   }
 }
 
