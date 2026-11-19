@@ -49,6 +49,7 @@ function setMode(register) {
   $('name-row').hidden = !register;
   $('name').required = register;
   $('password').autocomplete = register ? 'new-password' : 'current-password';
+  $('password-hint').hidden = !register;
 }
 
 async function authenticate(event) {
@@ -56,7 +57,13 @@ async function authenticate(event) {
   await guarded(async () => {
     const email = $('email').value.trim();
     const password = $('password').value;
-    if (registerMode) await api('/auth/register', { method: 'POST', body: { email, name: $('name').value.trim(), password } });
+    if (registerMode) {
+      const passwordBytes = new TextEncoder().encode(password).length;
+      if (passwordBytes < 12 || passwordBytes > 72) {
+        throw new Error('注册密码须为 12–72 个 UTF-8 字节');
+      }
+      await api('/auth/register', { method: 'POST', body: { email, name: $('name').value.trim(), password } });
+    }
     const login = await api('/auth/login', { method: 'POST', body: { email, password } });
     state.token = login.token;
     state.user = login.user;

@@ -35,7 +35,9 @@ paths:
               properties:
                 email: { type: string, format: email }
                 name: { type: string, maxLength: 100 }
-                password: { type: string, minLength: 12, maxLength: 72 }
+                password:
+                  type: string
+                  description: Must be 12 to 72 bytes when encoded as UTF-8.
       responses:
         '201': { description: Account created }
         '400': { description: Invalid input }

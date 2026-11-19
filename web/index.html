@@ -20,7 +20,8 @@
     <h2 id="auth-title">登录</h2>
     <label>邮箱<input id="email" type="email" required autocomplete="email"></label>
     <label id="name-row" hidden>昵称<input id="name" type="text" maxlength="50" autocomplete="nickname"></label>
-    <label>密码（至少 8 位）<input id="password" type="password" required minlength="8" autocomplete="current-password"></label>
+    <label>密码<input id="password" type="password" required autocomplete="current-password" aria-describedby="password-hint"></label>
+    <p id="password-hint" hidden>注册密码须为 12–72 个 UTF-8 字节（ASCII 字符每个占 1 字节）。</p>
     <button type="submit" id="auth-submit">登录</button>
     <button type="button" id="auth-toggle" class="link">没有账号？注册</button>
   </form>
