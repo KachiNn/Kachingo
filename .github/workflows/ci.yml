@@ -23,6 +23,21 @@ jobs:
       - run: go build ./...
       - run: docker build -t kachingo:ci .
       - run: docker compose config -q
+      - name: Smoke test Docker image
+        shell: bash
+        run: |
+          container=$(docker run -d -p 127.0.0.1::8080 kachingo:ci)
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              docker logs "$container" || true
+            fi
+            docker rm -fv "$container" >/dev/null
+          }
+          trap cleanup EXIT
+          endpoint=$(docker port "$container" 8080/tcp)
+          curl --fail --silent --show-error --max-time 3 --retry 8 --retry-delay 1 --retry-connrefused "http://$endpoint/readyz"
+          curl --fail --silent --show-error --max-time 3 "http://$endpoint/healthz"
 
   race:
     runs-on: ubuntu-latest

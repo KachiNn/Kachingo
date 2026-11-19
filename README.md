@@ -138,7 +138,7 @@ docker compose up --build
 
 ## API 契约与 CI
 
-OpenAPI 3.1 契约位于 `openapi.yaml`。GitHub Actions 在 Go 1.22 上执行测试、`go vet` 和构建，并校验 Docker 镜像与 Compose 配置。
+OpenAPI 3.1 契约位于 `openapi.yaml`。GitHub Actions 在 Go 1.22 上执行测试、`go vet` 和构建，并构建 Docker 镜像、校验 Compose 配置。CI 还会启动镜像，通过容器映射端口请求 `/readyz` 和 `/healthz`，验证 SQLite 就绪和 HTTP 服务可达。
 
 ## 数据与边界
 
