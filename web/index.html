@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kachingo 小组任务看板</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <h1>Kachingo</h1>
+  <div id="user-box" hidden><span id="user-name"></span><button id="logout" type="button">退出</button></div>
+</header>
+<p id="message" role="status" hidden></p>
+
+<main id="auth-view">
+  <form id="auth-form" class="card" autocomplete="on">
+    <h2 id="auth-title">登录</h2>
+    <label>邮箱<input id="email" type="email" required autocomplete="email"></label>
+    <label id="name-row" hidden>昵称<input id="name" type="text" maxlength="50" autocomplete="nickname"></label>
+    <label>密码（至少 8 位）<input id="password" type="password" required minlength="8" autocomplete="current-password"></label>
+    <button type="submit" id="auth-submit">登录</button>
+    <button type="button" id="auth-toggle" class="link">没有账号？注册</button>
+  </form>
+</main>
+
+<div id="app-view" class="layout" hidden>
+  <aside class="card">
+    <h2>我的项目</h2>
+    <ul id="projects" class="plain"></ul>
+    <form id="project-form">
+      <input id="project-name" type="text" placeholder="新项目名称" maxlength="100" required>
+      <button type="submit">创建</button>
+    </form>
+  </aside>
+  <section id="project-view" hidden>
+    <div class="bar">
+      <h2 id="project-title"></h2>
+      <span id="role-badge" class="badge"></span>
+      <span id="live" class="badge" title="实时连接状态">离线</span>
+    </div>
+    <form id="task-form" class="inline">
+      <input id="task-title" type="text" placeholder="新任务标题" maxlength="200" required>
+      <select id="task-priority"><option value="low">低</option><option value="normal" selected>中</option><option value="high">高</option></select>
+      <input id="task-due" type="date" title="截止日期（可选）">
+      <button type="submit">添加任务</button>
+    </form>
+    <div id="board" class="board"></div>
+    <details class="card">
+      <summary>成员</summary>
+      <ul id="members" class="plain"></ul>
+      <form id="member-form" class="inline" hidden>
+        <input id="member-email" type="email" placeholder="对方注册邮箱" required>
+        <select id="member-role"><option value="editor">editor 可编辑</option><option value="viewer">viewer 只读</option></select>
+        <button type="submit">添加成员</button>
+      </form>
+    </details>
+  </section>
+</div>
+</body>
+</html>

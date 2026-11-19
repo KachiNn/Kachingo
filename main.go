@@ -395,6 +395,7 @@ func main() {
 	hub := newWSHub(sqliteAuthRepository{db: db})
 	go hub.run()
 	v1 := &v1Server{db: db, loginLimiter: newLoginRateLimiter(loginLimit, time.Minute), wsHub: hub}
+	registerWeb(mux)
 	mux.HandleFunc("GET /ws", v1.wsHandler(hub))
 	mux.Handle("/api/v1/", v1.routes())
 	server := &http.Server{
