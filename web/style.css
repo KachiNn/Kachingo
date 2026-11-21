@@ -25,6 +25,8 @@ button.small { padding:2px 8px; font-size:12px; background:#edf0fb; color:var(--
 .badge { padding:1px 8px; border-radius:10px; background:#edf0fb; color:var(--accent); font-size:12px; }
 .badge.on { background:#d3f9d8; color:#2b8a3e; }
 .inline { display:grid; grid-template-columns:1fr 90px 150px auto; gap:8px; margin-bottom:12px; }
+#task-form { grid-template-columns:minmax(0,1fr) 90px 150px minmax(0,180px) auto; }
+.task-assignee { overflow-wrap:anywhere; }
 #member-form { grid-template-columns:1fr 160px auto; margin:10px 0 0; }
 #members li { gap:8px; align-items:center; flex-wrap:wrap; cursor:default; }
 .member-name { overflow-wrap:anywhere; }
@@ -42,4 +44,4 @@ button.small { padding:2px 8px; font-size:12px; background:#edf0fb; color:var(--
 .comments { margin-top:8px; border-top:1px dashed var(--line); padding-top:6px; font-size:13px; }
 .comments p { margin:4px 0; word-break:break-word; }
 .comments form { display:flex; gap:6px; margin-top:6px; }
-@media (max-width:800px) { .layout { grid-template-columns:1fr; } .board { grid-template-columns:1fr; } .inline { grid-template-columns:1fr 1fr; } }
+@media (max-width:800px) { .layout { grid-template-columns:1fr; } .board { grid-template-columns:1fr; } .inline, #task-form { grid-template-columns:repeat(2,minmax(0,1fr)); } }

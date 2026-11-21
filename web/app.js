@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 const STATUSES = [['open', '待办'], ['in_progress', '进行中'], ['done', '已完成']];
 const PRIORITY = { low: '低', normal: '中', high: '高' };
-const state = { token: localStorage.getItem('kachingo_token') || '', user: null, project: null, ws: null, retry: 0, timer: null };
+const state = { token: localStorage.getItem('kachingo_token') || '', user: null, project: null, memberNames: new Map(), ws: null, retry: 0, timer: null };
 
 function el(tag, props, ...children) {
   const node = document.createElement(tag);
@@ -120,7 +120,12 @@ async function createProject(event) {
 
 async function openProject(project) {
   $('members').replaceChildren();
+  $('board').replaceChildren();
   state.project = project;
+  state.memberNames.clear();
+  const assignee = $('task-assignee');
+  assignee.replaceChildren(el('option', { value: '' }, '未分配'));
+  assignee.disabled = true;
   $('project-view').hidden = false;
   $('project-title').textContent = project.name;
   $('role-badge').textContent = '我的角色：' + project.role;
@@ -128,16 +133,18 @@ async function openProject(project) {
   $('task-form').hidden = !canWrite;
   $('member-form').hidden = project.role !== 'owner';
   for (const item of $('projects').children) item.classList.toggle('active', item.firstChild && item.firstChild.textContent === project.name);
-  await Promise.all([loadBoard(), loadMembers()]);
+  await guarded(loadMembers);
+  if (state.project !== project) return;
+  await loadBoard();
   connectLive();
 }
 
 /* ---------- 看板 ---------- */
 async function loadBoard() {
   if (!state.project) return;
-  const projectID = state.project.id;
-  const columns = await api('/projects/' + projectID + '/board?limit=100');
-  if (!state.project || state.project.id !== projectID) return;
+  const project = state.project;
+  const columns = await api('/projects/' + project.id + '/board?limit=100');
+  if (state.project !== project) return;
   const board = $('board');
   board.replaceChildren();
   const today = new Date().toISOString().slice(0, 10);
@@ -157,6 +164,8 @@ function renderTask(task, columnIndex, today) {
   const card = el('div', { class: 'task' });
   const comments = el('div', { class: 'comments', hidden: '' });
   card.append(el('div', { class: 'title', onclick: () => guarded(() => toggleComments(task, comments)) }, task.title), el('div', { class: overdue ? 'meta overdue' : 'meta' }, meta));
+  const assignee = task.assignee_id == null ? '未分配' : (state.memberNames.get(task.assignee_id) || '成员 #' + task.assignee_id);
+  card.append(el('div', { class: 'meta task-assignee' }, '负责人：' + assignee));
   if (task.description) card.append(el('div', { class: 'meta' }, task.description));
   if (canWrite) {
     const actions = el('div', { class: 'actions' });
@@ -172,10 +181,16 @@ function renderTask(task, columnIndex, today) {
 async function createTask(event) {
   event.preventDefault();
   await guarded(async () => {
+    const project = state.project;
     const body = { title: $('task-title').value.trim(), priority: $('task-priority').value };
+    const assignee = $('task-assignee');
+    if (!assignee.disabled && assignee.value) body.assignee_id = Number(assignee.value);
     if ($('task-due').value) body.due_date = $('task-due').value;
-    await api('/projects/' + state.project.id + '/tasks', { method: 'POST', body });
-    $('task-title').value = ''; $('task-due').value = '';
+    await api('/projects/' + project.id + '/tasks', { method: 'POST', body });
+    if (state.project !== project) return;
+    $('task-title').value = '';
+    $('task-due').value = '';
+    assignee.value = '';
     await loadBoard();
   });
 }
@@ -224,6 +239,16 @@ async function loadMembers() {
   const members = await api(membersPath);
   if (state.project !== project) return;
 
+  state.memberNames = new Map(members.map(({ user }) => [user.id, user.name]));
+  const assignee = $('task-assignee');
+  const selected = assignee.value;
+  assignee.replaceChildren(el('option', { value: '' }, '未分配'));
+  for (const { user } of members) {
+    assignee.append(el('option', { value: user.id }, user.name + '（' + user.email + '）'));
+  }
+  assignee.value = state.memberNames.has(Number(selected)) ? selected : '';
+  assignee.disabled = project.role === 'viewer';
+
   const list = $('members');
   list.replaceChildren();
   for (const member of members) {
@@ -261,7 +286,9 @@ async function loadMembers() {
       remove.addEventListener('click', () => runMemberAction(async () => {
         if (!window.confirm('移除成员 ' + member.user.name + '？')) return;
         await api(memberPath, { method: 'DELETE' });
-        if (state.project === project) await loadMembers();
+        if (state.project !== project) return;
+        await loadMembers();
+        if (state.project === project) await loadBoard();
       }));
       actions.append(change, remove);
     }

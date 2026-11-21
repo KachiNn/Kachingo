@@ -46,6 +46,7 @@
       <input id="task-title" type="text" placeholder="新任务标题" maxlength="200" required>
       <select id="task-priority"><option value="low">低</option><option value="normal" selected>中</option><option value="high">高</option></select>
       <input id="task-due" type="date" title="截止日期（可选）">
+      <select id="task-assignee" aria-label="任务负责人" disabled><option value="">未分配</option></select>
       <button type="submit">添加任务</button>
     </form>
     <div id="board" class="board"></div>
