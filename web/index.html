@@ -50,6 +50,18 @@
       <button type="submit">添加任务</button>
     </form>
     <div id="board" class="board"></div>
+    <dialog id="assignment-dialog" class="card" aria-labelledby="assignment-heading">
+      <form id="assignment-form">
+        <h2 id="assignment-heading">更改负责人</h2>
+        <p id="assignment-task"></p>
+        <label>负责人<select id="assignment-select"></select></label>
+        <p id="assignment-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="assignment-cancel" class="link" type="button">取消</button>
+          <button id="assignment-save" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
     <details class="card">
       <summary>成员</summary>
       <ul id="members" class="plain"></ul>

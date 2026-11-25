@@ -27,6 +27,13 @@ button.small { padding:2px 8px; font-size:12px; background:#edf0fb; color:var(--
 .inline { display:grid; grid-template-columns:1fr 90px 150px auto; gap:8px; margin-bottom:12px; }
 #task-form { grid-template-columns:minmax(0,1fr) 90px 150px minmax(0,180px) auto; }
 .task-assignee { overflow-wrap:anywhere; }
+#assignment-dialog { width:min(400px, calc(100% - 32px)); color:var(--ink); }
+#assignment-dialog::backdrop { background:rgb(31 36 51 / 40%); }
+#assignment-heading { margin:0; }
+#assignment-task { overflow-wrap:anywhere; }
+#assignment-error { color:var(--danger); }
+.dialog-actions { display:flex; justify-content:flex-end; gap:12px; }
+#assignment-dialog button:disabled { opacity:.55; cursor:wait; }
 #member-form { grid-template-columns:1fr 160px auto; margin:10px 0 0; }
 #members li { gap:8px; align-items:center; flex-wrap:wrap; cursor:default; }
 .member-name { overflow-wrap:anywhere; }

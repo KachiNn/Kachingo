@@ -31,7 +31,11 @@ async function api(path, options = {}) {
   if (resp.status === 401 && state.token) { signOut(true); throw new Error('登录已过期，请重新登录'); }
   if (resp.status === 204) return null;
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || '请求失败（' + resp.status + '）');
+  if (!resp.ok) {
+    const error = new Error(data.error || '请求失败（' + resp.status + '）');
+    error.status = resp.status;
+    throw error;
+  }
   return data;
 }
 
@@ -74,6 +78,7 @@ async function authenticate(event) {
 }
 
 function signOut(expired) {
+  closeAssignment();
   if (state.ws) { state.ws.onclose = null; state.ws.close(); state.ws = null; }
   clearTimeout(state.timer);
   state.token = ''; state.user = null; state.project = null;
@@ -119,6 +124,7 @@ async function createProject(event) {
 }
 
 async function openProject(project) {
+  closeAssignment();
   $('members').replaceChildren();
   $('board').replaceChildren();
   state.project = project;
@@ -171,6 +177,9 @@ function renderTask(task, columnIndex, today) {
     const actions = el('div', { class: 'actions' });
     if (columnIndex > 0) actions.append(el('button', { class: 'small', type: 'button', onclick: () => guarded(() => moveTask(task, STATUSES[columnIndex - 1][0])) }, '← ' + STATUSES[columnIndex - 1][1]));
     if (columnIndex < 2) actions.append(el('button', { class: 'small', type: 'button', onclick: () => guarded(() => moveTask(task, STATUSES[columnIndex + 1][0])) }, STATUSES[columnIndex + 1][1] + ' →'));
+    if (state.memberNames.size) {
+      actions.append(el('button', { class: 'small', type: 'button', onclick: () => openAssignment(task) }, '更改负责人'));
+    }
     actions.append(el('button', { class: 'small', type: 'button', onclick: () => guarded(() => removeTask(task)) }, '删除'));
     card.append(actions);
   }
@@ -193,6 +202,63 @@ async function createTask(event) {
     assignee.value = '';
     await loadBoard();
   });
+}
+
+let assignmentDraft = null;
+
+function openAssignment(task) {
+  assignmentDraft = { project: state.project, task };
+  const select = $('assignment-select');
+  select.replaceChildren(...Array.from($('task-assignee').options, option => option.cloneNode(true)));
+  select.value = String(task.assignee_id ?? '');
+  if (select.selectedIndex < 0) select.value = '';
+  $('assignment-task').textContent = task.title;
+  $('assignment-error').hidden = true;
+  $('assignment-save').disabled = false;
+  $('assignment-cancel').disabled = false;
+  $('assignment-dialog').showModal();
+}
+
+function closeAssignment() {
+  assignmentDraft = null;
+  $('assignment-dialog').close();
+}
+
+async function saveAssignment(event) {
+  event.preventDefault();
+  const draft = assignmentDraft;
+  const save = $('assignment-save');
+  const cancel = $('assignment-cancel');
+  if (!draft || save.disabled) return;
+  const { project, task } = draft;
+  const value = $('assignment-select').value;
+  const assigneeID = value ? Number(value) : null;
+  if (assigneeID === task.assignee_id) {
+    closeAssignment();
+    return;
+  }
+  const errorBox = $('assignment-error');
+  errorBox.hidden = true;
+  save.disabled = cancel.disabled = true;
+  try {
+    await api('/projects/' + project.id + '/tasks/' + task.id, {
+      method: 'PATCH', body: { assignee_id: assigneeID, version: task.version }
+    });
+  } catch (error) {
+    if (assignmentDraft !== draft) return;
+    if (error.status === 409) {
+      closeAssignment();
+      await loadBoard();
+      notify('任务已被更新，请在看板上重新选择负责人。', true);
+      return;
+    }
+    errorBox.textContent = error.message;
+    errorBox.hidden = false;
+    save.disabled = cancel.disabled = false;
+    return;
+  }
+  if (assignmentDraft === draft) closeAssignment();
+  if (state.project === project) await loadBoard();
 }
 
 async function moveTask(task, status) {
@@ -343,5 +409,11 @@ $('auth-toggle').addEventListener('click', () => setMode(!registerMode));
 $('logout').addEventListener('click', logout);
 $('project-form').addEventListener('submit', createProject);
 $('task-form').addEventListener('submit', createTask);
+$('assignment-form').addEventListener('submit', event => guarded(() => saveAssignment(event)));
+$('assignment-cancel').addEventListener('click', closeAssignment);
+$('assignment-dialog').addEventListener('cancel', event => {
+  event.preventDefault();
+  if (!$('assignment-save').disabled) closeAssignment();
+});
 $('member-form').addEventListener('submit', addMember);
 if (state.token) guarded(enterApp);
