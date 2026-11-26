@@ -126,7 +126,7 @@ async function createProject(event) {
 async function openProject(project) {
   closeAssignment();
   $('members').replaceChildren();
-  $('board').replaceChildren();
+  resetBoardFilter();
   state.project = project;
   state.memberNames.clear();
   const assignee = $('task-assignee');
@@ -146,19 +146,63 @@ async function openProject(project) {
 }
 
 /* ---------- 看板 ---------- */
+const boardLimit = 100;
+let boardOffsets = [0, 0];
+let boardRequest = 0;
+
+function resetBoardFilter() {
+  $('board-overdue').checked = false;
+  boardOffsets = [0, 0];
+  $('board').replaceChildren();
+}
+
 async function loadBoard() {
   if (!state.project) return;
   const project = state.project;
-  const columns = await api('/projects/' + project.id + '/board?limit=100');
-  if (state.project !== project) return;
+  const request = ++boardRequest;
+  const overdue = $('board-overdue').checked;
+  const path = '/projects/' + project.id;
+  const offsets = [...boardOffsets];
+  const isCurrent = () => state.project === project && request === boardRequest;
+  let columns;
+  try {
+    columns = overdue ? await Promise.all(STATUSES.slice(0, 2).map(async ([status], index) => {
+      const pagePath = path + '/tasks?overdue=true&status=' + status + '&limit=' + boardLimit + '&offset=';
+      let page = await api(pagePath + offsets[index]);
+      if (isCurrent() && offsets[index] > 0 && offsets[index] >= page.total) {
+        offsets[index] = Math.floor(Math.max(0, page.total - 1) / boardLimit) * boardLimit;
+        page = await api(pagePath + offsets[index]);
+      }
+      return page;
+    })) : await api(path + '/board?limit=' + boardLimit);
+  } catch (error) {
+    if (isCurrent()) throw error;
+    return;
+  }
+  if (!isCurrent()) return;
+  boardOffsets = offsets;
   const board = $('board');
   board.replaceChildren();
   const today = new Date().toISOString().slice(0, 10);
-  columns.forEach((col, index) => {
-    const head = el('h3', {}, el('span', {}, STATUSES[index][1]), el('span', { class: 'badge' }, String(col.total)));
+  STATUSES.forEach(([, label], index) => {
+    const col = columns[index] || { items: [], total: 0 };
+    const head = el('h3', {}, el('span', {}, label), el('span', { class: 'badge' }, String(col.total)));
     const box = el('div', { class: 'column' }, head);
     for (const task of col.items) box.append(renderTask(task, index, today));
-    if (col.total > col.items.length) box.append(el('p', { class: 'meta' }, '仅显示前 ' + col.items.length + ' 条'));
+    if (overdue && !col.items.length) box.append(el('p', { class: 'meta' }, '暂无逾期任务'));
+    if (overdue && (col.total > boardLimit || offsets[index] > 0)) {
+      const pages = el('div', { class: 'board-pages' });
+      const button = (label, offset) => el('button', { class: 'small', type: 'button', onclick: () => guarded(async () => {
+        boardOffsets[index] = offset;
+        await loadBoard();
+      }) }, label);
+      if (offsets[index] > 0) pages.append(button('上一页', offsets[index] - boardLimit));
+      pages.append(el('span', {}, '第 ' + (offsets[index] / boardLimit + 1) + ' 页'));
+      if (offsets[index] + boardLimit < col.total) pages.append(button('下一页', offsets[index] + boardLimit));
+      box.append(pages);
+    } else if (!overdue && col.total > col.items.length) {
+      box.append(el('p', { class: 'meta' }, '仅显示前 ' + col.items.length + ' 条'));
+    }
     board.append(box);
   });
 }
@@ -409,6 +453,11 @@ $('auth-toggle').addEventListener('click', () => setMode(!registerMode));
 $('logout').addEventListener('click', logout);
 $('project-form').addEventListener('submit', createProject);
 $('task-form').addEventListener('submit', createTask);
+$('board-overdue').addEventListener('change', () => guarded(async () => {
+  boardOffsets = [0, 0];
+  $('board').replaceChildren();
+  await loadBoard();
+}));
 $('assignment-form').addEventListener('submit', event => guarded(() => saveAssignment(event)));
 $('assignment-cancel').addEventListener('click', closeAssignment);
 $('assignment-dialog').addEventListener('cancel', event => {

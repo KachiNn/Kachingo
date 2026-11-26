@@ -40,6 +40,9 @@ button.small { padding:2px 8px; font-size:12px; background:#edf0fb; color:var(--
 .member-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .member-actions button:disabled { opacity:.55; cursor:wait; }
 #project-form { display:grid; gap:6px; }
+.board-filter { display:flex; align-items:center; gap:6px; width:fit-content; }
+.board-filter input { width:auto; margin:0; }
+.board-pages { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
 .column { background:#eceff7; border-radius:8px; padding:10px; min-height:120px; }
 .column h3 { margin:0 0 8px; font-size:14px; display:flex; justify-content:space-between; }
